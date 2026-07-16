@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// ============================================================
+// PRATA AQUA — Firestore Security Rules
+// Paste this into Firebase Console → Firestore Database → Rules
+// ============================================================
+// Model: any signed-in user can read/write day-to-day data
+// (entries, stock, transactions). Only users with role "admin"
+// in the /users/{uid} document can register bottles or users.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // User profiles (name, role, email) — created by admin at signup time
+    match /users/{userId} {
+      allow read: if isSignedIn() && userId != 'admin_exists' && (isAdmin() || request.auth.uid == userId);
+      allow create: if isSignedIn() && userId != 'admin_exists' && (
+        isAdmin() || 
+        (request.auth.uid == userId && (
+          (request.resource.data.role == 'admin' && !exists(/databases/$(database)/documents/users/admin_exists)) ||
+          (request.resource.data.role == 'staff' && exists(/databases/$(database)/documents/users/admin_exists))
+        ))
+      );
+      allow update: if isSignedIn() && userId != 'admin_exists' && (
+        isAdmin() ||
+        (request.auth.uid == userId && request.resource.data.role == 'admin' && !exists(/databases/$(database)/documents/users/admin_exists))
+      );
+      allow delete: if isAdmin() && userId != 'admin_exists';
+    }
+
+    // Special admin marker document to manage first-time admin registration
+    match /users/admin_exists {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isAdmin() || !exists(/databases/$(database)/documents/users/admin_exists));
+      allow update, delete: if isAdmin();
+    }
+
+    // Registered bottle / customisation types
+    match /bottles/{bottleId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Section 1 — data entry records (brand, date, case rate, size)
+    match /entries/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Section 2 — one stock summary doc per bottle
+    match /stock/{bottleId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Section 2 — log of every production / sale movement
+    match /stockTransactions/{txId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+  <meta name="theme-color" content="#0B2027">
+  <title>Prata Aqua — Customize Brand</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- ===================== BOOT / LOADING ===================== -->
+  <div id="bootScreen" class="screen screen--boot">
+    <img class="wave-logo wave-logo--boot" src="logo.png" alt="Prata Aqua Logo">
+  </div>
+
+  <!-- ===================== LOGIN SCREEN ===================== -->
+  <div id="loginScreen" class="screen screen--login" hidden>
+    <div class="login-card">
+      <div class="brand-mark">
+        <img class="wave-logo" src="logo.png" alt="Prata Aqua Logo">
+        <h1>PRATA AQUA</h1>
+        <p class="brand-sub">Customize Brand</p>
+      </div>
+
+      <form id="loginForm" class="stack">
+        <label class="field">
+          <span>Email</span>
+          <input type="email" id="loginEmail" required autocomplete="username" placeholder="you@prataaqua.com">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••">
+        </label>
+        <button type="submit" class="btn btn--primary btn--block" id="loginBtn">
+          <span class="btn-label">Log in</span>
+          <span class="btn-spinner" hidden></span>
+        </button>
+        <p id="loginError" class="form-error" hidden></p>
+      </form>
+      <p class="login-hint">Accounts are created by an admin from the Admin tab. No self-signup.</p>
+    </div>
+  </div>
+
+  <!-- ===================== MAIN APP ===================== -->
+  <div id="appScreen" class="screen screen--app" hidden>
+
+    <!-- ---------- Sidebar (desktop) ---------- -->
+    <aside class="sidebar">
+      <div class="sidebar__brand">
+        <img class="wave-logo wave-logo--sm" src="logo.png" alt="Prata Aqua Logo">
+        <div>
+          <span class="sidebar__brand-name">PRATA AQUA</span>
+          <span class="sidebar__brand-sub">Customize Brand</span>
+        </div>
+      </div>
+
+      <nav class="sidebar__nav">
+        <button class="navlink is-active" data-panel="panel-entry">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>Customisation Entry</span>
+        </button>
+        <button class="navlink" data-panel="panel-stock">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 21V9l8-6 8 6v12M4 21h16M9 21v-6h6v6" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Stock Record</span>
+        </button>
+        <button class="navlink" data-panel="panel-admin" id="navAdminLink">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="2" />
+            <path d="M4.5 20c1.5-4 4-6 7.5-6s6 2 7.5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>Admin</span>
+        </button>
+      </nav>
+
+      <div class="sidebar__user">
+        <div class="avatar" id="userAvatar">–</div>
+        <div class="sidebar__user-meta">
+          <span id="userNameLabel">—</span>
+          <span id="userRoleLabel" class="role-pill">staff</span>
+        </div>
+        <button id="logoutBtn" class="icon-btn" title="Log out" aria-label="Log out">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M15 17l5-5-5-5M20 12H9M12 19H6a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ---------- Mobile topbar ---------- -->
+    <header class="topbar">
+      <div class="topbar__brand">
+        <img class="wave-logo wave-logo--sm" src="logo.png" alt="Prata Aqua Logo">
+        <span>PRATA AQUA</span>
+      </div>
+      <div class="avatar avatar--sm" id="userAvatarMobile">–</div>
+    </header>
+
+    <main class="content">
+
+      <!-- ============ SECTION 1: DATA ENTRY ============ -->
+      <section id="panel-entry" class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Section 1</p>
+            <h2>Customisation Entry</h2>
+          </div>
+          <button class="btn btn--primary btn--sm" id="exportEntriesBtn">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            Export to Excel
+          </button>
+        </div>
+
+        <div class="kpi-row" id="entryKpiRow">
+          <div class="kpi"><span class="kpi__label">Total entries</span><span class="kpi__value"
+              id="kpiEntryTotal">0</span></div>
+          <div class="kpi"><span class="kpi__label">This month</span><span class="kpi__value"
+              id="kpiEntryMonth">0</span></div>
+          <div class="kpi"><span class="kpi__label">Brands tracked</span><span class="kpi__value"
+              id="kpiEntryBrands">0</span></div>
+          <div class="kpi"><span class="kpi__label">Avg. case rate</span><span class="kpi__value"
+              id="kpiEntryAvgRate">₹0</span></div>
+        </div>
+
+        <form id="entryForm" class="card form-grid">
+          <label class="field">
+            <span>Brand name</span>
+            <input type="text" id="entryBrand" required placeholder="e.g. Prata Aqua">
+          </label>
+          <label class="field">
+            <span>Date</span>
+            <input type="date" id="entryDate" required>
+          </label>
+          <label class="field">
+            <span>Case rate (₹ per case)</span>
+            <input type="number" id="entryRate" required min="0" step="0.01" placeholder="e.g. 65.00">
+          </label>
+          <label class="field">
+            <span>Product size</span>
+            <select id="entrySize" required>
+              <option value="">Select size</option>
+              <option>200 ml</option>
+              <option>750 ml</option>
+              <option>1 L</option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">Save entry</button>
+          </div>
+        </form>
+
+        <div class="card table-card">
+          <div class="table-toolbar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <input type="search" id="entriesSearch" placeholder="Search by brand or size…">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="entriesTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Case rate</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody id="entriesTableBody">
+                <tr class="empty-row">
+                  <td colspan="5">No entries yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION 2: STOCK RECORD ============ -->
+      <section id="panel-stock" class="panel" hidden>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Section 2</p>
+            <h2>Stock Record</h2>
+          </div>
+          <button class="btn btn--primary btn--sm" id="exportStockBtn">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            Export to Excel
+          </button>
+        </div>
+
+        <div class="kpi-row" id="stockKpiRow">
+          <div class="kpi"><span class="kpi__label">Bottles tracked</span><span class="kpi__value"
+              id="kpiStockBottles">0</span></div>
+          <div class="kpi"><span class="kpi__label">Total closing stock</span><span class="kpi__value"
+              id="kpiStockClosing">0</span></div>
+          <div class="kpi kpi--warn"><span class="kpi__label">Low stock alerts</span><span class="kpi__value"
+              id="kpiStockLow">0</span></div>
+        </div>
+
+        <div class="card form-grid">
+          <label class="field field--wide">
+            <span>Bottle / customisation</span>
+            <select id="stockBottleSelect"></select>
+          </label>
+        </div>
+
+        <div id="stockMeter" class="meter-grid" hidden>
+          <div class="meter meter--opening">
+            <span class="meter__label">Opening stock</span>
+            <span class="meter__value" id="meterOpening">0</span>
+            <span class="meter__note" id="openingLockNote">Set once, then locked</span>
+          </div>
+          <div class="meter meter--production">
+            <span class="meter__label">Total production</span>
+            <span class="meter__value" id="meterProduction">0</span>
+          </div>
+          <div class="meter meter--sale">
+            <span class="meter__label">Total sale</span>
+            <span class="meter__value" id="meterSale">0</span>
+          </div>
+          <div class="meter meter--closing">
+            <span class="meter__label">Closing stock</span>
+            <span class="meter__value" id="meterClosing">0</span>
+            <span class="meter__note">Opening − Sale + Production</span>
+          </div>
+        </div>
+
+        <div class="card chart-card" id="stockChartCard" hidden>
+          <h3 class="card-title">Movement trend</h3>
+          <div class="chart-wrap"><canvas id="stockChart" height="180"></canvas></div>
+        </div>
+
+        <div class="card form-grid" id="openingStockCard" hidden>
+          <label class="field">
+            <span>Set opening stock (one-time, then locked)</span>
+            <input type="number" id="openingStockInput" min="0" placeholder="e.g. 5000">
+          </label>
+          <div class="form-actions">
+            <button class="btn btn--primary" id="setOpeningBtn">Lock opening stock</button>
+          </div>
+        </div>
+
+        <form id="movementForm" class="card form-grid" hidden>
+          <label class="field">
+            <span>Movement type</span>
+            <select id="movementType">
+              <option value="production">Production (add)</option>
+              <option value="sale">Sale (subtract)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Quantity (cases)</span>
+            <input type="number" id="movementQty" min="1" required placeholder="e.g. 120">
+          </label>
+          <label class="field">
+            <span>Date</span>
+            <input type="date" id="movementDate" required>
+          </label>
+          <label class="field field--wide">
+            <span>Note (optional)</span>
+            <input type="text" id="movementNote" placeholder="e.g. Order #4521">
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">Add movement</button>
+          </div>
+        </form>
+
+        <div class="card table-card">
+          <div class="table-toolbar">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <input type="search" id="movementsSearch" placeholder="Search by note or type…">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="movementsTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Qty</th>
+                  <th>Note</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody id="movementsTableBody">
+                <tr class="empty-row">
+                  <td colspan="5">Select a bottle to see its movements.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION 3: ADMIN ============ -->
+      <section id="panel-admin" class="panel" hidden>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Section 3</p>
+            <h2>Admin</h2>
+          </div>
+        </div>
+
+        <div class="kpi-row" id="adminKpiRow">
+          <div class="kpi"><span class="kpi__label">Registered bottles</span><span class="kpi__value"
+              id="kpiAdminBottles">0</span></div>
+          <div class="kpi"><span class="kpi__label">Team members</span><span class="kpi__value"
+              id="kpiAdminUsers">0</span></div>
+          <div class="kpi"><span class="kpi__label">Admins</span><span class="kpi__value" id="kpiAdminAdmins">0</span>
+          </div>
+        </div>
+
+        <div class="admin-grid">
+          <div class="card">
+            <h3 class="card-title">Register a new bottle / customisation</h3>
+            <form id="bottleForm" class="form-grid">
+              <label class="field">
+                <span>Bottle name</span>
+                <input type="text" id="bottleName" required placeholder="e.g. Prata Aqua 500ml">
+              </label>
+              <label class="field">
+                <span>Default size</span>
+                <select id="bottleSize" required>
+                  <option value="">Select size</option>
+                  <option>200 ml</option>
+                  <option>750 ml</option>
+                  <option>1 L</option>
+                </select>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="btn btn--primary">Register bottle</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3 class="card-title">Register a new user</h3>
+            <form id="userForm" class="form-grid">
+              <label class="field">
+                <span>Full name</span>
+                <input type="text" id="userFullName" required placeholder="e.g. Rakesh Patel">
+              </label>
+              <label class="field">
+                <span>Email</span>
+                <input type="email" id="userEmail" required placeholder="name@prataaqua.com">
+              </label>
+              <label class="field">
+                <span>Temporary password</span>
+                <input type="text" id="userPassword" required minlength="6" placeholder="min. 6 characters">
+              </label>
+              <label class="field">
+                <span>Role</span>
+                <select id="userRole">
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="btn btn--primary">Register user</button>
+              </div>
+            </form>
+            <p id="adminOnlyNote" class="form-hint" hidden>Only admins can register bottles and users.</p>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <h3 class="card-title">Registered bottles</h3>
+          <div class="table-scroll">
+            <table id="bottlesTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Size</th>
+                  <th>Registered</th>
+                </tr>
+              </thead>
+              <tbody id="bottlesTableBody">
+                <tr class="empty-row">
+                  <td colspan="3">None yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <h3 class="card-title">Users</h3>
+          <div class="table-scroll">
+            <table id="usersTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr class="empty-row">
+                  <td colspan="3">None yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <nav class="tabbar">
+      <button class="tabbar__btn is-active" data-panel="panel-entry">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span>Entry</span>
+      </button>
+      <button class="tabbar__btn" data-panel="panel-stock">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 21V9l8-6 8 6v12M4 21h16M9 21v-6h6v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+        <span>Stock</span>
+      </button>
+      <button class="tabbar__btn" data-panel="panel-admin" id="tabAdminLink">
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="2" />
+          <path d="M4.5 20c1.5-4 4-6 7.5-6s6 2 7.5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span>Admin</span>
+      </button>
+    </nav>
+
+    <div id="toast" class="toast" hidden></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>
