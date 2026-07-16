@@ -274,6 +274,15 @@ function renderBottleOptions() {
   }
 }
 
+function renderBrandOptions() {
+  const select = $("entryBrand");
+  if (!select) return;
+  const uniqueNames = [...new Set(bottles.map((b) => b.name))].sort();
+  select.innerHTML = uniqueNames.length
+    ? `<option value="">Select brand</option>` + uniqueNames.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")
+    : `<option value="">Register a bottle in Admin first</option>`;
+}
+
 $("stockBottleSelect").addEventListener("change", (e) => {
   selectedBottleId = e.target.value;
   if (selectedBottleId) loadStockForBottle(selectedBottleId);
@@ -577,6 +586,7 @@ function startListeners() {
   onSnapshot(query(collection(db, "bottles"), orderBy("createdAt", "desc")), (qs) => {
     bottles = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderBottleOptions();
+    renderBrandOptions();
     if (currentProfile?.role === "admin") {
       renderBottlesTable(bottles);
     }
