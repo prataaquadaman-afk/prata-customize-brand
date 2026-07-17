@@ -116,7 +116,7 @@
         <div class="panel-head">
           <div>
             <p class="eyebrow">Section 1</p>
-            <h2>Customisation Entry</h2>
+            <h2>Customisation Entry (Sales)</h2>
           </div>
           <button class="btn btn--primary btn--sm" id="exportEntriesBtn">
             <svg viewBox="0 0 24 24" fill="none">
@@ -154,12 +154,13 @@
             <input type="number" id="entryRate" required min="0" step="0.01" placeholder="e.g. 65.00">
           </label>
           <label class="field">
+            <span>Quantity (cases)</span>
+            <input type="number" id="entryQty" required min="1" step="1" placeholder="e.g. 100">
+          </label>
+          <label class="field">
             <span>Product size</span>
             <select id="entrySize" required>
-              <option value="">Select size</option>
-              <option>200 ml</option>
-              <option>750 ml</option>
-              <option>1 L</option>
+              <option value="">Select brand first</option>
             </select>
           </label>
           <div class="form-actions">
@@ -184,13 +185,15 @@
                   <th>Date</th>
                   <th>Brand</th>
                   <th>Size</th>
+                  <th>Quantity (cases)</th>
                   <th>Case rate</th>
+                  <th>Total Amount</th>
                   <th>By</th>
                 </tr>
               </thead>
               <tbody id="entriesTableBody">
                 <tr class="empty-row">
-                  <td colspan="5">No entries yet.</td>
+                  <td colspan="7">No entries yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -221,6 +224,30 @@
               id="kpiStockClosing">0</span></div>
           <div class="kpi kpi--warn"><span class="kpi__label">Low stock alerts</span><span class="kpi__value"
               id="kpiStockLow">0</span></div>
+        </div>
+
+        <div class="card table-card" style="margin-bottom: 1.5rem;">
+          <h3 class="card-title" style="padding: 1.25rem 1.5rem 0.5rem;">All Stocks Summary</h3>
+          <div class="table-scroll">
+            <table id="allStockTable">
+              <thead>
+                <tr>
+                  <th>Bottle / Customisation</th>
+                  <th>Size</th>
+                  <th>Opening Stock</th>
+                  <th>Total Production</th>
+                  <th>Total Sale</th>
+                  <th>Closing Stock</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="allStockTableBody">
+                <tr class="empty-row">
+                  <td colspan="7">Loading stock summary...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="card form-grid">
