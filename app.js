@@ -27,6 +27,7 @@ let unsubMovements = null;
 let allEntries = [];       // cached raw rows for client-side search
 let allMovements = [];
 let allUsers = [];
+let allStocks = {};        // cached raw stock data keyed by bottleId
 
 let stockChart = null;
 
@@ -184,21 +185,96 @@ document.querySelectorAll(".tabbar__btn, .navlink").forEach((btn) => {
 // ============================================================
 $("entryDate").valueAsDate = new Date();
 
+$("entryBrand").addEventListener("change", () => {
+  const brandName = $("entryBrand").value;
+  const sizeSelect = $("entrySize");
+  if (!brandName) {
+    sizeSelect.innerHTML = `<option value="">Select brand first</option>`;
+    return;
+  }
+  const brandBottles = bottles.filter((b) => b.name === brandName);
+  sizeSelect.innerHTML = `<option value="">Select size</option>` + 
+    brandBottles.map((b) => `<option value="${escapeHtml(b.size)}">${escapeHtml(b.size)}</option>`).join("");
+});
+
 $("entryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const brandName = $("entryBrand").value.trim();
+  const productSize = $("entrySize").value;
+  const qty = Number($("entryQty").value);
+  const caseRate = Number($("entryRate").value);
+  const date = $("entryDate").value;
+
+  if (!qty || qty <= 0) {
+    toast("Enter a valid quantity");
+    return;
+  }
+
+  // Find the registered bottle matching this brand and size
+  const matchingBottle = bottles.find((b) => b.name === brandName && b.size === productSize);
+  if (!matchingBottle) {
+    toast("No registered bottle matches the selected Brand and Size");
+    return;
+  }
+
   try {
     const payload = {
-      brandName: $("entryBrand").value.trim(),
-      date: $("entryDate").value,
-      caseRate: Number($("entryRate").value),
-      productSize: $("entrySize").value,
+      brandName,
+      productSize,
+      date,
+      caseRate,
+      quantity: qty,
+      totalAmount: qty * caseRate,
       createdBy: currentProfile?.name || currentUser.email,
       createdAt: serverTimestamp(),
     };
+
+    // Update stock atomically using a transaction
+    const stockRef = doc(db, "stock", matchingBottle.id);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(stockRef);
+      let openingStock = 0;
+      let openingSet = false;
+      let totalProduction = 0;
+      let totalSale = 0;
+      if (snap.exists()) {
+        const data = snap.data();
+        openingStock = data.openingStock || 0;
+        openingSet = data.openingSet || false;
+        totalProduction = data.totalProduction || 0;
+        totalSale = data.totalSale || 0;
+      }
+      totalSale += qty;
+      const closingStock = openingStock - totalSale + totalProduction;
+      tx.set(stockRef, {
+        bottleId: matchingBottle.id,
+        openingStock,
+        openingSet,
+        totalProduction,
+        totalSale,
+        closingStock,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    });
+
+    // Add transaction to stockTransactions
+    await addDoc(collection(db, "stockTransactions"), {
+      bottleId: matchingBottle.id,
+      type: "sale",
+      quantity: qty,
+      date,
+      note: `Customisation Sale: ${brandName} (${productSize})`,
+      createdBy: currentProfile?.name || currentUser.email,
+      createdAt: serverTimestamp(),
+    });
+
+    // Add to entries
     await addDoc(collection(db, "entries"), payload);
+
     e.target.reset();
     $("entryDate").valueAsDate = new Date();
-    toast("Entry saved");
+    $("entrySize").innerHTML = `<option value="">Select brand first</option>`;
+    toast("Entry saved & stock updated");
   } catch (err) {
     console.error("Save entry error:", err);
     toast("Error saving entry: " + err.message);
@@ -218,17 +294,24 @@ function filterRows(rows, term, fields) {
 function renderEntries(rows) {
   const body = $("entriesTableBody");
   if (!rows.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="5">No entries yet.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No entries yet.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map((r) => `
-    <tr>
-      <td>${escapeHtml(r.date)}</td>
-      <td>${escapeHtml(r.brandName)}</td>
-      <td>${escapeHtml(r.productSize)}</td>
-      <td>₹${Number(r.caseRate).toFixed(2)}</td>
-      <td>${escapeHtml(r.createdBy || "—")}</td>
-    </tr>`).join("");
+  body.innerHTML = rows.map((r) => {
+    const qty = Number(r.quantity || 0);
+    const rate = Number(r.caseRate || 0);
+    const amount = r.totalAmount ?? (qty * rate);
+    return `
+      <tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td>${escapeHtml(r.brandName)}</td>
+        <td>${escapeHtml(r.productSize)}</td>
+        <td>${qty.toLocaleString()}</td>
+        <td>₹${rate.toFixed(2)}</td>
+        <td>₹${amount.toFixed(2)}</td>
+        <td>${escapeHtml(r.createdBy || "—")}</td>
+      </tr>`;
+  }).join("");
 }
 
 function updateEntryKpis(rows) {
@@ -237,12 +320,14 @@ function updateEntryKpis(rows) {
     const d = new Date(r.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
-  const brands = new Set(rows.map((r) => r.brandName));
-  const avgRate = rows.length ? rows.reduce((s, r) => s + Number(r.caseRate || 0), 0) / rows.length : 0;
+  
+  const totalCases = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  const totalRevenue = rows.reduce((s, r) => s + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0))), 0);
+  
   $("kpiEntryTotal").textContent = rows.length;
   $("kpiEntryMonth").textContent = thisMonth;
-  $("kpiEntryBrands").textContent = brands.size;
-  $("kpiEntryAvgRate").textContent = `₹${avgRate.toFixed(2)}`;
+  $("kpiEntryBrands").textContent = totalCases.toLocaleString();
+  $("kpiEntryAvgRate").textContent = `₹${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 $("exportEntriesBtn").addEventListener("click", async () => {
@@ -251,7 +336,10 @@ $("exportEntriesBtn").addEventListener("click", async () => {
   exportToExcel(
     rows.map((r) => ({
       Date: r.date, "Brand Name": r.brandName, "Product Size": r.productSize,
-      "Case Rate (₹)": r.caseRate, "Entered By": r.createdBy,
+      "Quantity (cases)": r.quantity ?? 0,
+      "Case Rate (₹)": r.caseRate ?? 0,
+      "Total Amount (₹)": r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0)),
+      "Entered By": r.createdBy,
     })),
     "Customisation_Entries"
   );
@@ -290,12 +378,9 @@ $("stockBottleSelect").addEventListener("change", (e) => {
 
 async function loadStockForBottle(bottleId) {
   if (unsubMovements) unsubMovements();
-  const stockRef = doc(db, "stock", bottleId);
-  const snap = await getDoc(stockRef);
-  const data = snap.exists() ? snap.data() : null;
-
   $("stockMeter").hidden = false;
 
+  const data = allStocks[bottleId];
   if (!data || !data.openingSet) {
     $("openingStockCard").hidden = false;
     $("movementForm").hidden = true;
@@ -317,8 +402,6 @@ async function loadStockForBottle(bottleId) {
     renderMovements(filterRows(allMovements, $("movementsSearch").value, ["note", "type"]));
     renderStockChart(allMovements);
   });
-
-  renderStockKpis();
 }
 
 function updateMeters(data) {
@@ -351,20 +434,34 @@ $("setOpeningBtn").addEventListener("click", async () => {
   }
   try {
     const stockRef = doc(db, "stock", selectedBottleId);
-    const snap = await getDoc(stockRef);
-    if (snap.exists() && snap.data().openingSet) {
-      toast("Opening stock is already locked for this bottle");
-      return;
-    }
-    await setDoc(stockRef, {
-      bottleId: selectedBottleId,
-      openingStock: val,
-      openingSet: true,
-      totalProduction: 0,
-      totalSale: 0,
-      closingStock: val,
-      updatedAt: serverTimestamp(),
+    
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(stockRef);
+      let totalProduction = 0;
+      let totalSale = 0;
+      
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.openingSet) {
+          throw new Error("Opening stock is already locked for this bottle");
+        }
+        totalProduction = data.totalProduction || 0;
+        totalSale = data.totalSale || 0;
+      }
+      
+      const closingStock = val - totalSale + totalProduction;
+      
+      tx.set(stockRef, {
+        bottleId: selectedBottleId,
+        openingStock: val,
+        openingSet: true,
+        totalProduction,
+        totalSale,
+        closingStock,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     });
+    
     toast("Opening stock locked");
     loadStockForBottle(selectedBottleId);
   } catch (err) {
@@ -473,11 +570,50 @@ function renderStockChart(movements) {
   });
 }
 
-async function renderStockKpis() {
-  const stockSnap = await getDocs(collection(db, "stock"));
-  const rows = stockSnap.docs.map((d) => d.data());
-  const totalClosing = rows.reduce((s, r) => s + (r.closingStock || 0), 0);
-  const lowStock = rows.filter((r) => (r.closingStock ?? 0) < 100).length;
+function renderAllStockTable() {
+  const body = $("allStockTableBody");
+  if (!body) return;
+  if (!bottles.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No registered bottles. Register in Admin first.</td></tr>`;
+    return;
+  }
+  
+  body.innerHTML = bottles.map((b) => {
+    const stock = allStocks[b.id];
+    const hasOpening = stock && stock.openingSet;
+    const opening = hasOpening ? stock.openingStock : "—";
+    const prod = hasOpening ? stock.totalProduction : (stock?.totalProduction ?? 0);
+    const sale = hasOpening ? stock.totalSale : (stock?.totalSale ?? 0);
+    const closing = hasOpening ? stock.closingStock : "—";
+    
+    let statusHtml = "";
+    if (!hasOpening) {
+      statusHtml = `<span class="tag tag--warn" style="background-color: #FEF3C7; color: #D97706; padding: 4px 10px;">Pending Opening Stock</span>`;
+    } else if (stock.closingStock < 100) {
+      statusHtml = `<span class="tag tag--danger" style="background-color: #FEE2E2; color: #DC2626; padding: 4px 10px;">Low Stock</span>`;
+    } else {
+      statusHtml = `<span class="tag tag--success" style="background-color: #D1FAE5; color: #059669; padding: 4px 10px;">Good</span>`;
+    }
+
+    return `
+      <tr>
+        <td><strong>${escapeHtml(b.name)}</strong></td>
+        <td>${escapeHtml(b.size)}</td>
+        <td>${hasOpening ? Number(opening).toLocaleString() : opening}</td>
+        <td>${Number(prod).toLocaleString()}</td>
+        <td>${Number(sale).toLocaleString()}</td>
+        <td>${hasOpening ? Number(closing).toLocaleString() : closing}</td>
+        <td>${statusHtml}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function updateStockKpis() {
+  const stockRows = Object.values(allStocks);
+  const totalClosing = stockRows.reduce((s, r) => s + (r.closingStock || 0), 0);
+  const lowStock = stockRows.filter((r) => r.openingSet && (r.closingStock ?? 0) < 100).length;
+  
   $("kpiStockBottles").textContent = bottles.length;
   $("kpiStockClosing").textContent = totalClosing.toLocaleString();
   $("kpiStockLow").textContent = lowStock;
@@ -590,7 +726,34 @@ function startListeners() {
     if (currentProfile?.role === "admin") {
       renderBottlesTable(bottles);
     }
-    renderStockKpis();
+    renderAllStockTable();
+    updateStockKpis();
+  });
+
+  onSnapshot(collection(db, "stock"), (qs) => {
+    allStocks = {};
+    qs.docs.forEach((d) => {
+      allStocks[d.id] = d.data();
+    });
+    renderAllStockTable();
+    updateStockKpis();
+    if (selectedBottleId) {
+      const data = allStocks[selectedBottleId];
+      if (data && data.openingSet) {
+        $("openingStockCard").hidden = true;
+        $("movementForm").hidden = false;
+        $("stockChartCard").hidden = false;
+        updateMeters(data);
+      } else {
+        $("openingStockCard").hidden = false;
+        $("movementForm").hidden = true;
+        $("stockChartCard").hidden = true;
+        $("meterOpening").textContent = "—";
+        $("meterProduction").textContent = "—";
+        $("meterSale").textContent = "—";
+        $("meterClosing").textContent = "—";
+      }
+    }
   });
 
   if (currentProfile?.role === "admin") {
