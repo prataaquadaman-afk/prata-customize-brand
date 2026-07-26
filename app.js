@@ -842,7 +842,6 @@ $("exportInboxBtn").addEventListener("click", () => {
 // 1. Register Resort / Company
 $("resortForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (currentProfile?.role !== "admin") { toast("Admins only"); return; }
   const name = $("resortName").value.trim();
   const contact = $("resortContact").value.trim();
   const phone = $("resortPhone").value.trim();
@@ -853,13 +852,18 @@ $("resortForm").addEventListener("submit", async (e) => {
   try {
     await addDoc(collection(db, "resorts"), {
       name, contact, phone, city,
+      createdBy: currentProfile?.name || currentUser?.email || "Admin",
       createdAt: serverTimestamp(),
     });
     e.target.reset();
     toast("Resort company registered");
   } catch (err) {
     console.error("Register resort error:", err);
-    toast("Error registering resort: " + err.message);
+    if (err.code === "permission-denied" || err.message.includes("permissions")) {
+      toast("Permission error: Update Firestore Rules in Firebase Console");
+    } else {
+      toast("Error registering resort: " + err.message);
+    }
   }
 });
 
@@ -899,7 +903,6 @@ function renderResortsTable(rows) {
 // 2. Register Product / Customisation
 $("bottleForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (currentProfile?.role !== "admin") { toast("Admins only"); return; }
   const name = $("bottleName").value.trim();
   const size = $("bottleSize").value;
   const rate = Number($("bottleRate").value || 0);
@@ -909,13 +912,18 @@ $("bottleForm").addEventListener("submit", async (e) => {
   try {
     await addDoc(collection(db, "bottles"), {
       name, size, rate,
+      createdBy: currentProfile?.name || currentUser?.email || "Admin",
       createdAt: serverTimestamp(),
     });
     e.target.reset();
     toast("Product registered");
   } catch (err) {
     console.error("Register product error:", err);
-    toast("Error registering product: " + err.message);
+    if (err.code === "permission-denied" || err.message.includes("permissions")) {
+      toast("Permission error: Update Firestore Rules in Firebase Console");
+    } else {
+      toast("Error registering product: " + err.message);
+    }
   }
 });
 
