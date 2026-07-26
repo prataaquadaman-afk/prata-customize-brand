@@ -1,7 +1,7 @@
 // ============================================================
 // PRATA AQUA — App logic
-// Uses Firebase v10 modular SDK loaded straight from Google's CDN,
-// plus your own config from firebase-config.js.
+// Resort Customisation, Batch Stock Records, Company Inbox & Product Dashboard
+// Uses Firebase v10 modular SDK
 // ============================================================
 import { firebaseConfig } from "./firebase-config.js";
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, getDoc, getDocs,
-  runTransaction, query, orderBy, onSnapshot, serverTimestamp
+  query, orderBy, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
@@ -20,25 +20,28 @@ const db = getFirestore(app);
 
 let currentUser = null;    // Firebase auth user
 let currentProfile = null; // { name, role, email } from /users/{uid}
-let bottles = [];          // registered bottle list
-let selectedBottleId = null;
-let unsubMovements = null;
+let resorts = [];          // registered resort companies
+let bottles = [];          // registered products/bottles
+let allEntries = [];       // raw sales entries
+let allBatches = [];       // raw stock batch records
+let allUsers = [];         // registered users
 
-let allEntries = [];       // cached raw rows for client-side search
-let allMovements = [];
-let allUsers = [];
-let allStocks = {};        // cached raw stock data keyed by bottleId
-
-let stockChart = null;
-
-// ---------- DOM refs ----------
+// ---------- DOM Helper ----------
 const $ = (id) => document.getElementById(id);
 const bootScreen = $("bootScreen");
 const loginScreen = $("loginScreen");
 const appScreen = $("appScreen");
 
+// Helper: Check if a date string ("YYYY-MM-DD") falls in a range
+function isDateInRange(dateStr, startDate, endDate) {
+  if (!dateStr) return true;
+  if (startDate && dateStr < startDate) return false;
+  if (endDate && dateStr > endDate) return false;
+  return true;
+}
+
 // ============================================================
-// AUTH
+// AUTHENTICATION
 // ============================================================
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -64,8 +67,6 @@ function setLoginBusy(busy) {
 
 $("logoutBtn").addEventListener("click", () => signOut(auth));
 
-let firstAuthCheck = true;
-
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) {
@@ -73,7 +74,6 @@ onAuthStateChanged(auth, async (user) => {
     bootScreen.hidden = true;
     loginScreen.hidden = false;
     appScreen.hidden = true;
-    firstAuthCheck = false;
     return;
   }
   try {
@@ -82,20 +82,14 @@ onAuthStateChanged(auth, async (user) => {
     bootScreen.hidden = true;
     loginScreen.hidden = true;
     appScreen.hidden = false;
-    firstAuthCheck = false;
     startListeners();
   } catch (err) {
     console.error("Auth initialization error:", err);
     currentProfile = null;
-    try {
-      await signOut(auth);
-    } catch (signOutErr) {
-      console.error("Failed to sign out after profile error:", signOutErr);
-    }
+    try { await signOut(auth); } catch (e) {}
     bootScreen.hidden = true;
     loginScreen.hidden = false;
     appScreen.hidden = true;
-    firstAuthCheck = false;
     $("loginError").textContent = "Profile loading error: " + err.message;
     $("loginError").hidden = false;
   }
@@ -117,7 +111,7 @@ function applyProfileToUI() {
   if (!isAdmin) {
     const activePanel = document.querySelector(".panel:not([hidden])")?.id;
     if (activePanel === "panel-admin") {
-      goToPanel("panel-entry");
+      goToPanel("panel-dashboard");
     }
   }
 
@@ -137,7 +131,6 @@ async function loadOrCreateProfile(user) {
   const adminExistsRef = doc(db, "users", "admin_exists");
   const adminExistsSnap = await getDoc(adminExistsRef);
 
-  // If there's no admin_exists marker, the first logging user MUST be promoted to admin
   if (!adminExistsSnap.exists()) {
     const name = snap.exists() ? (snap.data().name || user.email.split("@")[0]) : user.email.split("@")[0];
     const createdAt = snap.exists() ? (snap.data().createdAt || serverTimestamp()) : serverTimestamp();
@@ -149,7 +142,6 @@ async function loadOrCreateProfile(user) {
 
   if (snap.exists()) return snap.data();
 
-  // If snap doesn't exist but admin_exists does, create a regular staff profile
   const profile = { name: user.email.split("@")[0], email: user.email, role: "staff", createdAt: serverTimestamp() };
   await setDoc(ref, profile);
   return profile;
@@ -165,10 +157,11 @@ function friendlyAuthError(err) {
 }
 
 // ============================================================
-// NAVIGATION (sidebar on desktop + tabbar on mobile, kept in sync)
+// NAVIGATION SYSTEM (Desktop Sidebar + Mobile Bottom Tabbar)
 // ============================================================
 function goToPanel(panelId) {
   if (panelId === "panel-admin" && currentProfile?.role !== "admin") {
+    toast("Admin access required");
     return;
   }
   document.querySelectorAll(".tabbar__btn, .navlink").forEach((b) => {
@@ -176,49 +169,257 @@ function goToPanel(panelId) {
   });
   document.querySelectorAll(".panel").forEach((p) => (p.hidden = p.id !== panelId));
 }
+
 document.querySelectorAll(".tabbar__btn, .navlink").forEach((btn) => {
   btn.addEventListener("click", () => goToPanel(btn.dataset.panel));
 });
 
-// ============================================================
-// SECTION 1 — DATA ENTRY
-// ============================================================
-$("entryDate").valueAsDate = new Date();
+// Helper to calculate total amount live
+function updateEntryTotalCalc() {
+  const qty = Number($("entryQty").value || 0);
+  const rate = Number($("entryRate").value || 0);
+  const total = qty * rate;
+  $("entryTotalAmountCalc").textContent = `₹${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+$("entryQty").addEventListener("input", updateEntryTotalCalc);
+$("entryRate").addEventListener("input", updateEntryTotalCalc);
 
-$("entryBrand").addEventListener("change", () => {
-  const brandName = $("entryBrand").value;
-  const sizeSelect = $("entrySize");
-  if (!brandName) {
-    sizeSelect.innerHTML = `<option value="">Select brand first</option>`;
-    return;
+// Auto rate fill when product selected
+$("entryBrand").addEventListener("change", (e) => {
+  const productName = e.target.value;
+  if (!productName) return;
+  const match = bottles.find((b) => b.name === productName);
+  if (match) {
+    if (match.rate) $("entryRate").value = match.rate;
+    if (match.size) $("entrySize").value = match.size;
+    updateEntryTotalCalc();
   }
-  const brandBottles = bottles.filter((b) => b.name === brandName);
-  sizeSelect.innerHTML = `<option value="">Select size</option>` + 
-    brandBottles.map((b) => `<option value="${escapeHtml(b.size)}">${escapeHtml(b.size)}</option>`).join("");
 });
 
+// Set default dates
+$("entryDate").valueAsDate = new Date();
+$("batchDate").valueAsDate = new Date();
+
+// ============================================================
+// SECTION 0 — DASHBOARD (PRODUCT ANALYTICS & RECORDS)
+// ============================================================
+function renderDashboard() {
+  const selectedProduct = $("dashProductSelect")?.value || "";
+  const startDate = $("dashStartDate")?.value || "";
+  const endDate = $("dashEndDate")?.value || "";
+
+  // Filter entries & batches by selected product & date range
+  const filteredEntries = allEntries.filter((e) => {
+    if (selectedProduct && e.brandName !== selectedProduct) return false;
+    return isDateInRange(e.date, startDate, endDate);
+  });
+
+  const filteredBatches = allBatches.filter((b) => {
+    if (selectedProduct && b.productName !== selectedProduct) return false;
+    return isDateInRange(b.date, startDate, endDate);
+  });
+
+  // Global KPIs
+  const grossRev = filteredEntries.reduce((s, r) => s + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0))), 0);
+  const totalCases = filteredEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  const stockAdded = filteredBatches.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  const stockBalance = stockAdded - totalCases;
+
+  // Find top product in date range
+  const prodRevenueMap = {};
+  filteredEntries.forEach((r) => {
+    prodRevenueMap[r.brandName] = (prodRevenueMap[r.brandName] || 0) + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0)));
+  });
+  let topProd = "—";
+  let maxRev = 0;
+  Object.entries(prodRevenueMap).forEach(([pName, rev]) => {
+    if (rev > maxRev) { maxRev = rev; topProd = pName; }
+  });
+
+  $("dashKpiTotalRevenue").textContent = `₹${grossRev.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  $("dashKpiTotalCases").textContent = totalCases.toLocaleString();
+  $("dashKpiStockBalance").textContent = stockBalance.toLocaleString();
+  $("dashKpiTopProduct").textContent = selectedProduct ? selectedProduct : topProd;
+
+  // Render Product Cards Grid
+  renderProductCardsGrid(startDate, endDate);
+
+  // Render Product Sales Activity Table
+  renderDashTable(filterRows(filteredEntries, $("dashSearch")?.value, ["brandName", "resortName", "productSize", "date"]));
+
+  // Render Product Registered Stock Batches Table
+  renderDashStockBatchTable(filteredBatches);
+}
+
+function renderProductCardsGrid(startDate, endDate) {
+  const container = $("dashProductCardsGrid");
+  if (!container) return;
+
+  const productNames = [...new Set([...bottles.map((b) => b.name), ...allEntries.map((e) => e.brandName), ...allBatches.map((b) => b.productName)])].filter(Boolean).sort();
+
+  if (!productNames.length) {
+    container.innerHTML = `<div class="card" style="grid-column:1/-1; text-align:center; color:var(--text-muted);">No product records found. Register products in Admin.</div>`;
+    return;
+  }
+
+  container.innerHTML = productNames.map((pName) => {
+    const prodEntries = allEntries.filter((e) => e.brandName === pName && isDateInRange(e.date, startDate, endDate));
+    const prodBatches = allBatches.filter((b) => b.productName === pName && isDateInRange(b.date, startDate, endDate));
+
+    const casesSold = prodEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const totalRev = prodEntries.reduce((s, r) => s + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0))), 0);
+    const totalStock = prodBatches.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const availStock = totalStock - casesSold;
+    const resortsServed = new Set(prodEntries.map((e) => e.resortName).filter(Boolean)).size;
+
+    const sizeMap = {};
+    prodEntries.forEach((e) => {
+      sizeMap[e.productSize] = (sizeMap[e.productSize] || 0) + Number(e.quantity || 0);
+    });
+
+    const isSelected = $("dashProductSelect")?.value === pName;
+
+    return `
+      <div class="card dash-product-card ${isSelected ? 'dash-product-card--active' : ''}" onclick="selectDashboardProduct('${escapeHtml(pName)}')">
+        <div class="dash-card-header">
+          <div>
+            <h4 class="dash-prod-title">${escapeHtml(pName)}</h4>
+            <span class="dash-resort-tag">${resortsServed} resorts • ${prodBatches.length} stock batches</span>
+          </div>
+          <span class="dash-rev-pill">₹${totalRev.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+        </div>
+
+        <div class="dash-stat-row">
+          <div class="dash-stat">
+            <span class="dash-stat-label">Cases Sold</span>
+            <span class="dash-stat-val">${casesSold.toLocaleString()}</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat-label">Stock Balance</span>
+            <span class="dash-stat-val ${availStock < 50 ? 'color-warn' : ''}">${availStock.toLocaleString()}</span>
+          </div>
+        </div>
+
+        <div class="dash-size-pills">
+          ${Object.entries(sizeMap).length ? Object.entries(sizeMap).map(([sz, qty]) => `
+            <span class="badge-size">${escapeHtml(sz)}: ${qty} cases</span>
+          `).join("") : '<span class="badge-size">No sales in range</span>'}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+window.selectDashboardProduct = (pName) => {
+  const sel = $("dashProductSelect");
+  if (sel) {
+    sel.value = (sel.value === pName) ? "" : pName;
+    renderDashboard();
+  }
+};
+
+$("dashProductSelect")?.addEventListener("change", () => renderDashboard());
+$("dashStartDate")?.addEventListener("change", () => renderDashboard());
+$("dashEndDate")?.addEventListener("change", () => renderDashboard());
+$("dashClearDateBtn")?.addEventListener("click", () => {
+  if ($("dashStartDate")) $("dashStartDate").value = "";
+  if ($("dashEndDate")) $("dashEndDate").value = "";
+  renderDashboard();
+});
+$("dashSearch")?.addEventListener("input", () => renderDashboard());
+
+function renderDashTable(rows) {
+  const body = $("dashTableBody");
+  if (!body) return;
+  if (!rows.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="8">No matching product sales records found in date range.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => {
+    const qty = Number(r.quantity || 0);
+    const rate = Number(r.caseRate || 0);
+    const amount = r.totalAmount ?? (qty * rate);
+    return `
+      <tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td><strong>${escapeHtml(r.brandName)}</strong></td>
+        <td>${escapeHtml(r.resortName || "—")}</td>
+        <td><span class="badge-size">${escapeHtml(r.productSize)}</span></td>
+        <td>${qty.toLocaleString()}</td>
+        <td>₹${rate.toFixed(2)}</td>
+        <td><strong>₹${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+        <td>${escapeHtml(r.createdBy || "—")}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderDashStockBatchTable(rows) {
+  const body = $("dashStockBatchTableBody");
+  if (!body) return;
+  if (!rows.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No registered stock batches found in date range.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.date)}</td>
+      <td><span class="badge-batch">${escapeHtml(r.batchNumber)}</span></td>
+      <td><strong>${escapeHtml(r.productName)}</strong></td>
+      <td><span class="badge-size">${escapeHtml(r.productSize)}</span></td>
+      <td><strong>${Number(r.quantity || 0).toLocaleString()} cases</strong></td>
+      <td>${escapeHtml(r.note || "—")}</td>
+      <td>${escapeHtml(r.createdBy || "—")}</td>
+    </tr>
+  `).join("");
+}
+
+$("exportDashBtn")?.addEventListener("click", () => {
+  const selectedProduct = $("dashProductSelect")?.value;
+  const startDate = $("dashStartDate")?.value;
+  const endDate = $("dashEndDate")?.value;
+
+  const rows = allEntries.filter((e) => {
+    if (selectedProduct && e.brandName !== selectedProduct) return false;
+    return isDateInRange(e.date, startDate, endDate);
+  });
+
+  if (!rows.length) { toast("No records match the selected dates"); return; }
+  exportToExcel(
+    rows.map((r) => ({
+      Date: r.date,
+      "Product Brand": r.brandName,
+      "Resort / Company": r.resortName || "N/A",
+      "Product Size": r.productSize,
+      "Quantity (cases)": r.quantity,
+      "Case Rate (₹)": r.caseRate,
+      "Total Amount (₹)": r.totalAmount ?? (r.quantity * r.caseRate),
+      "Recorded By": r.createdBy,
+    })),
+    `Dashboard_Report_${startDate || "Start"}_to_${endDate || "End"}`
+  );
+});
+
+// ============================================================
+// SECTION 1 — CUSTOMISATION SALES ENTRY
+// ============================================================
 $("entryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const resortName = $("entryResort").value.trim();
   const brandName = $("entryBrand").value.trim();
   const productSize = $("entrySize").value;
   const qty = Number($("entryQty").value);
   const caseRate = Number($("entryRate").value);
   const date = $("entryDate").value;
 
-  if (!qty || qty <= 0) {
-    toast("Enter a valid quantity");
-    return;
-  }
-
-  // Find the registered bottle matching this brand and size
-  const matchingBottle = bottles.find((b) => b.name === brandName && b.size === productSize);
-  if (!matchingBottle) {
-    toast("No registered bottle matches the selected Brand and Size");
-    return;
-  }
+  if (!resortName) { toast("Please select a Resort / Company"); return; }
+  if (!brandName) { toast("Please select a Product / Brand"); return; }
+  if (!qty || qty <= 0) { toast("Enter a valid quantity"); return; }
+  if (caseRate < 0) { toast("Enter a valid case rate"); return; }
 
   try {
     const payload = {
+      resortName,
       brandName,
       productSize,
       date,
@@ -229,72 +430,49 @@ $("entryForm").addEventListener("submit", async (e) => {
       createdAt: serverTimestamp(),
     };
 
-    // Update stock atomically using a transaction
-    const stockRef = doc(db, "stock", matchingBottle.id);
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(stockRef);
-      let openingStock = 0;
-      let openingSet = false;
-      let totalProduction = 0;
-      let totalSale = 0;
-      if (snap.exists()) {
-        const data = snap.data();
-        openingStock = data.openingStock || 0;
-        openingSet = data.openingSet || false;
-        totalProduction = data.totalProduction || 0;
-        totalSale = data.totalSale || 0;
-      }
-      totalSale += qty;
-      const closingStock = openingStock - totalSale + totalProduction;
-      tx.set(stockRef, {
-        bottleId: matchingBottle.id,
-        openingStock,
-        openingSet,
-        totalProduction,
-        totalSale,
-        closingStock,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    });
-
-    // Add transaction to stockTransactions
-    await addDoc(collection(db, "stockTransactions"), {
-      bottleId: matchingBottle.id,
-      type: "sale",
-      quantity: qty,
-      date,
-      note: `Customisation Sale: ${brandName} (${productSize})`,
-      createdBy: currentProfile?.name || currentUser.email,
-      createdAt: serverTimestamp(),
-    });
-
-    // Add to entries
     await addDoc(collection(db, "entries"), payload);
 
     e.target.reset();
     $("entryDate").valueAsDate = new Date();
-    $("entrySize").innerHTML = `<option value="">Select brand first</option>`;
-    toast("Entry saved & stock updated");
+    updateEntryTotalCalc();
+    toast("Customisation entry saved");
   } catch (err) {
     console.error("Save entry error:", err);
     toast("Error saving entry: " + err.message);
   }
 });
 
-$("entriesSearch").addEventListener("input", (e) => {
-  renderEntries(filterRows(allEntries, e.target.value, ["brandName", "productSize"]));
-});
+function getFilteredEntries() {
+  const startDate = $("entryStartDate")?.value;
+  const endDate = $("entryEndDate")?.value;
+  const searchTerm = $("entriesSearch")?.value;
 
-function filterRows(rows, term, fields) {
-  const q = term.trim().toLowerCase();
-  if (!q) return rows;
-  return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
+  let rows = allEntries.filter((e) => isDateInRange(e.date, startDate, endDate));
+  return filterRows(rows, searchTerm, ["resortName", "brandName", "productSize"]);
+}
+
+$("entryStartDate")?.addEventListener("change", refreshEntriesView);
+$("entryEndDate")?.addEventListener("change", refreshEntriesView);
+$("entryClearDateBtn")?.addEventListener("click", () => {
+  if ($("entryStartDate")) $("entryStartDate").value = "";
+  if ($("entryEndDate")) $("entryEndDate").value = "";
+  refreshEntriesView();
+});
+$("entriesSearch")?.addEventListener("input", refreshEntriesView);
+
+function refreshEntriesView() {
+  const rows = getFilteredEntries();
+  renderEntries(rows);
+  const startDate = $("entryStartDate")?.value;
+  const endDate = $("entryEndDate")?.value;
+  const dateFilteredRaw = allEntries.filter((e) => isDateInRange(e.date, startDate, endDate));
+  updateEntryKpis(dateFilteredRaw);
 }
 
 function renderEntries(rows) {
   const body = $("entriesTableBody");
   if (!rows.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="7">No entries yet.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="8">No sales entries found in date range.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r) => {
@@ -304,11 +482,12 @@ function renderEntries(rows) {
     return `
       <tr>
         <td>${escapeHtml(r.date)}</td>
+        <td><strong>${escapeHtml(r.resortName || "—")}</strong></td>
         <td>${escapeHtml(r.brandName)}</td>
-        <td>${escapeHtml(r.productSize)}</td>
+        <td><span class="badge-size">${escapeHtml(r.productSize)}</span></td>
         <td>${qty.toLocaleString()}</td>
         <td>₹${rate.toFixed(2)}</td>
-        <td>₹${amount.toFixed(2)}</td>
+        <td><strong>₹${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
         <td>${escapeHtml(r.createdBy || "—")}</td>
       </tr>`;
   }).join("");
@@ -320,356 +499,444 @@ function updateEntryKpis(rows) {
     const d = new Date(r.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
-  
-  const totalCases = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  const uniqueResorts = new Set(rows.map((r) => r.resortName).filter(Boolean)).size;
   const totalRevenue = rows.reduce((s, r) => s + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0))), 0);
-  
+
   $("kpiEntryTotal").textContent = rows.length;
   $("kpiEntryMonth").textContent = thisMonth;
-  $("kpiEntryBrands").textContent = totalCases.toLocaleString();
-  $("kpiEntryAvgRate").textContent = `₹${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  $("kpiEntryResorts").textContent = uniqueResorts;
+  $("kpiEntryRevenue").textContent = `₹${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-$("exportEntriesBtn").addEventListener("click", async () => {
-  const snap = await getDocs(query(collection(db, "entries"), orderBy("date", "desc")));
-  const rows = snap.docs.map((d) => d.data());
+$("exportEntriesBtn").addEventListener("click", () => {
+  const startDate = $("entryStartDate")?.value;
+  const endDate = $("entryEndDate")?.value;
+  const rows = allEntries.filter((e) => isDateInRange(e.date, startDate, endDate));
+
+  if (!rows.length) { toast("No sales entries match the selected dates"); return; }
   exportToExcel(
     rows.map((r) => ({
-      Date: r.date, "Brand Name": r.brandName, "Product Size": r.productSize,
+      Date: r.date,
+      "Resort / Company": r.resortName || "N/A",
+      "Product / Brand": r.brandName,
+      "Product Size": r.productSize,
       "Quantity (cases)": r.quantity ?? 0,
       "Case Rate (₹)": r.caseRate ?? 0,
       "Total Amount (₹)": r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0)),
       "Entered By": r.createdBy,
     })),
-    "Customisation_Entries"
+    `Customisation_Sales_${startDate || "Start"}_to_${endDate || "End"}`
   );
 });
 
 // ============================================================
-// SECTION 2 — STOCK RECORD
+// SECTION 2 — NORMAL STOCK RECORD (BATCH ENTRY & LOG)
 // ============================================================
-function renderBottleOptions() {
-  const select = $("stockBottleSelect");
-  select.innerHTML = bottles.length
-    ? bottles.map((b) => `<option value="${b.id}">${escapeHtml(b.name)} (${escapeHtml(b.size)})</option>`).join("")
-    : `<option value="">Register a bottle in Admin first</option>`;
-  if (bottles.length && !selectedBottleId) {
-    selectedBottleId = bottles[0].id;
-    select.value = selectedBottleId;
-    loadStockForBottle(selectedBottleId);
-  } else if (selectedBottleId) {
-    select.value = selectedBottleId;
-  }
-}
-
-function renderBrandOptions() {
-  const select = $("entryBrand");
-  if (!select) return;
-  const uniqueNames = [...new Set(bottles.map((b) => b.name))].sort();
-  select.innerHTML = uniqueNames.length
-    ? `<option value="">Select brand</option>` + uniqueNames.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")
-    : `<option value="">Register a bottle in Admin first</option>`;
-}
-
-$("stockBottleSelect").addEventListener("change", (e) => {
-  selectedBottleId = e.target.value;
-  if (selectedBottleId) loadStockForBottle(selectedBottleId);
-});
-
-async function loadStockForBottle(bottleId) {
-  if (unsubMovements) unsubMovements();
-  $("stockMeter").hidden = false;
-
-  const data = allStocks[bottleId];
-  if (!data || !data.openingSet) {
-    $("openingStockCard").hidden = false;
-    $("movementForm").hidden = true;
-    $("stockChartCard").hidden = true;
-    $("meterOpening").textContent = "—";
-    $("meterProduction").textContent = "—";
-    $("meterSale").textContent = "—";
-    $("meterClosing").textContent = "—";
-  } else {
-    $("openingStockCard").hidden = true;
-    $("movementForm").hidden = false;
-    $("stockChartCard").hidden = false;
-    updateMeters(data);
-  }
-
-  const txQuery = query(collection(db, "stockTransactions"), orderBy("createdAt", "desc"));
-  unsubMovements = onSnapshot(txQuery, (qs) => {
-    allMovements = qs.docs.map((d) => d.data()).filter((r) => r.bottleId === bottleId);
-    renderMovements(filterRows(allMovements, $("movementsSearch").value, ["note", "type"]));
-    renderStockChart(allMovements);
-  });
-}
-
-function updateMeters(data) {
-  animateNumber($("meterOpening"), data.openingStock ?? 0);
-  animateNumber($("meterProduction"), data.totalProduction ?? 0);
-  animateNumber($("meterSale"), data.totalSale ?? 0);
-  animateNumber($("meterClosing"), data.closingStock ?? 0);
-}
-
-function animateNumber(el, target) {
-  const start = Number(el.dataset.val || 0);
-  const dur = 500;
-  const t0 = performance.now();
-  function step(t) {
-    const p = Math.min(1, (t - t0) / dur);
-    const eased = 1 - Math.pow(1 - p, 3);
-    const val = Math.round(start + (target - start) * eased);
-    el.textContent = val.toLocaleString();
-    if (p < 1) requestAnimationFrame(step);
-    else el.dataset.val = target;
-  }
-  requestAnimationFrame(step);
-}
-
-$("setOpeningBtn").addEventListener("click", async () => {
-  const val = Number($("openingStockInput").value);
-  if (!selectedBottleId || Number.isNaN(val) || val < 0) {
-    toast("Enter a valid opening stock");
-    return;
-  }
-  try {
-    const stockRef = doc(db, "stock", selectedBottleId);
-    
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(stockRef);
-      let totalProduction = 0;
-      let totalSale = 0;
-      
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.openingSet) {
-          throw new Error("Opening stock is already locked for this bottle");
-        }
-        totalProduction = data.totalProduction || 0;
-        totalSale = data.totalSale || 0;
-      }
-      
-      const closingStock = val - totalSale + totalProduction;
-      
-      tx.set(stockRef, {
-        bottleId: selectedBottleId,
-        openingStock: val,
-        openingSet: true,
-        totalProduction,
-        totalSale,
-        closingStock,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    });
-    
-    toast("Opening stock locked");
-    loadStockForBottle(selectedBottleId);
-  } catch (err) {
-    console.error("Lock opening stock error:", err);
-    toast("Error locking stock: " + err.message);
-  }
-});
-
-// Automatic rule: closingStock = openingStock - totalSale + totalProduction
-// Applied atomically via a Firestore transaction so concurrent entries
-// from different devices never race each other.
-$("movementForm").addEventListener("submit", async (e) => {
+$("stockBatchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!selectedBottleId) return;
-  const type = $("movementType").value; // 'production' | 'sale'
-  const qty = Number($("movementQty").value);
-  const date = $("movementDate").value || new Date().toISOString().slice(0, 10);
-  const note = $("movementNote").value.trim();
+  const productName = $("batchProduct").value.trim();
+  const productSize = $("batchSize").value;
+  const batchNumber = $("batchNumber").value.trim();
+  const date = $("batchDate").value;
+  const qty = Number($("batchQty").value);
+  const note = $("batchNote").value.trim();
 
-  if (!qty || qty <= 0) { toast("Enter a valid quantity"); return; }
+  if (!productName) { toast("Select a product"); return; }
+  if (!productSize) { toast("Select a size"); return; }
+  if (!batchNumber) { toast("Enter batch number"); return; }
+  if (!qty || qty <= 0) { toast("Enter valid quantity"); return; }
 
   try {
-    const stockRef = doc(db, "stock", selectedBottleId);
-
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(stockRef);
-      if (!snap.exists() || !snap.data().openingSet) {
-        throw new Error("Set opening stock first");
-      }
-      const data = snap.data();
-      const totalProduction = (data.totalProduction || 0) + (type === "production" ? qty : 0);
-      const totalSale = (data.totalSale || 0) + (type === "sale" ? qty : 0);
-      const closingStock = data.openingStock - totalSale + totalProduction;
-      tx.update(stockRef, { totalProduction, totalSale, closingStock, updatedAt: serverTimestamp() });
-    });
-
-    await addDoc(collection(db, "stockTransactions"), {
-      bottleId: selectedBottleId,
-      type, quantity: qty, date, note,
+    await addDoc(collection(db, "stockBatches"), {
+      productName,
+      productSize,
+      batchNumber,
+      date,
+      quantity: qty,
+      note,
       createdBy: currentProfile?.name || currentUser.email,
       createdAt: serverTimestamp(),
     });
 
     e.target.reset();
-    $("movementDate").valueAsDate = new Date();
-    toast("Movement recorded");
-    loadStockForBottle(selectedBottleId);
+    $("batchDate").valueAsDate = new Date();
+    toast("Batch stock registered");
   } catch (err) {
-    console.error("Record movement error:", err);
-    toast("Error recording movement: " + err.message);
+    console.error("Register batch stock error:", err);
+    toast("Error registering batch: " + err.message);
   }
 });
-$("movementDate").valueAsDate = new Date();
 
-$("movementsSearch").addEventListener("input", (e) => {
-  renderMovements(filterRows(allMovements, e.target.value, ["note", "type"]));
+$("stockBrandFilter")?.addEventListener("change", refreshStockView);
+$("stockStartDate")?.addEventListener("change", refreshStockView);
+$("stockEndDate")?.addEventListener("change", refreshStockView);
+$("stockClearDateBtn")?.addEventListener("click", () => {
+  if ($("stockStartDate")) $("stockStartDate").value = "";
+  if ($("stockEndDate")) $("stockEndDate").value = "";
+  refreshStockView();
 });
+$("batchSearch")?.addEventListener("input", refreshStockView);
 
-function renderMovements(rows) {
-  const body = $("movementsTableBody");
-  if (!rows.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="5">No movements yet.</td></tr>`;
+function refreshStockView() {
+  renderStockSummary();
+  const searchTerm = $("batchSearch")?.value;
+  const filtered = filterRows(allBatches, searchTerm, ["batchNumber", "productName", "productSize", "note"]);
+  renderBatchLog(filtered);
+}
+
+function renderBatchLog(rows) {
+  const body = $("batchTableBody");
+  if (!body) return;
+
+  const brandFilter = $("stockBrandFilter")?.value;
+  const startDate = $("stockStartDate")?.value;
+  const endDate = $("stockEndDate")?.value;
+
+  let filtered = rows.filter((r) => {
+    if (brandFilter && r.productName !== brandFilter) return false;
+    return isDateInRange(r.date, startDate, endDate);
+  });
+
+  if (!filtered.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No batch stock registered in selected range.</td></tr>`;
     return;
   }
-  const sorted = [...rows].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  body.innerHTML = sorted.map((r) => `
+  body.innerHTML = filtered.map((r) => `
     <tr>
       <td>${escapeHtml(r.date)}</td>
-      <td><span class="tag tag--${r.type}">${r.type === "production" ? "Production" : "Sale"}</span></td>
-      <td>${r.quantity}</td>
+      <td><span class="badge-batch">${escapeHtml(r.batchNumber)}</span></td>
+      <td><strong>${escapeHtml(r.productName)}</strong></td>
+      <td><span class="badge-size">${escapeHtml(r.productSize)}</span></td>
+      <td>${Number(r.quantity || 0).toLocaleString()} cases</td>
       <td>${escapeHtml(r.note || "—")}</td>
       <td>${escapeHtml(r.createdBy || "—")}</td>
-    </tr>`).join("");
+    </tr>
+  `).join("");
 }
 
-function renderStockChart(movements) {
-  const canvas = $("stockChart");
-  if (!canvas || typeof Chart === "undefined") return;
-  const byDate = {};
-  [...movements].sort((a, b) => (a.date || "").localeCompare(b.date || "")).forEach((m) => {
-    byDate[m.date] = byDate[m.date] || { production: 0, sale: 0 };
-    byDate[m.date][m.type] += m.quantity;
-  });
-  const labels = Object.keys(byDate);
-  const production = labels.map((d) => byDate[d].production);
-  const sale = labels.map((d) => byDate[d].sale);
-
-  if (stockChart) stockChart.destroy();
-  stockChart = new Chart(canvas.getContext("2d"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Production", data: production, borderColor: "#1E8E5A", backgroundColor: "rgba(30,142,90,0.12)", tension: 0.35, fill: true },
-        { label: "Sale", data: sale, borderColor: "#FF6B4A", backgroundColor: "rgba(255,107,74,0.12)", tension: 0.35, fill: true },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { font: { family: "Inter" }, boxWidth: 10 } } },
-      scales: {
-        x: { grid: { display: false } },
-        y: { beginAtZero: true, grid: { color: "#EAF6F6" } },
-      },
-    },
-  });
-}
-
-function renderAllStockTable() {
-  const body = $("allStockTableBody");
+function renderStockSummary() {
+  const body = $("stockSummaryTableBody");
   if (!body) return;
-  if (!bottles.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="7">No registered bottles. Register in Admin first.</td></tr>`;
+
+  const brandFilter = $("stockBrandFilter")?.value;
+  const startDate = $("stockStartDate")?.value;
+  const endDate = $("stockEndDate")?.value;
+
+  const summaryMap = {};
+
+  allBatches.forEach((b) => {
+    if (brandFilter && b.productName !== brandFilter) return;
+    if (!isDateInRange(b.date, startDate, endDate)) return;
+    const key = `${b.productName}__${b.productSize}`;
+    if (!summaryMap[key]) {
+      summaryMap[key] = { productName: b.productName, productSize: b.productSize, stockAdded: 0, sales: 0 };
+    }
+    summaryMap[key].stockAdded += Number(b.quantity || 0);
+  });
+
+  allEntries.forEach((e) => {
+    if (brandFilter && e.brandName !== brandFilter) return;
+    if (!isDateInRange(e.date, startDate, endDate)) return;
+    const key = `${e.brandName}__${e.productSize}`;
+    if (!summaryMap[key]) {
+      summaryMap[key] = { productName: e.brandName, productSize: e.productSize, stockAdded: 0, sales: 0 };
+    }
+    summaryMap[key].sales += Number(e.quantity || 0);
+  });
+
+  const summaryList = Object.values(summaryMap);
+
+  if (!summaryList.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="6">No stock records found in date range.</td></tr>`;
     return;
   }
-  
-  body.innerHTML = bottles.map((b) => {
-    const stock = allStocks[b.id];
-    const hasOpening = stock && stock.openingSet;
-    const opening = hasOpening ? stock.openingStock : "—";
-    const prod = hasOpening ? stock.totalProduction : (stock?.totalProduction ?? 0);
-    const sale = hasOpening ? stock.totalSale : (stock?.totalSale ?? 0);
-    const closing = hasOpening ? stock.closingStock : "—";
-    
-    let statusHtml = "";
-    if (!hasOpening) {
-      statusHtml = `<span class="tag tag--warn" style="background-color: #FEF3C7; color: #D97706; padding: 4px 10px;">Pending Opening Stock</span>`;
-    } else if (stock.closingStock < 100) {
-      statusHtml = `<span class="tag tag--danger" style="background-color: #FEE2E2; color: #DC2626; padding: 4px 10px;">Low Stock</span>`;
+
+  body.innerHTML = summaryList.map((item) => {
+    const balance = item.stockAdded - item.sales;
+    let statusTag = "";
+    if (balance <= 0) {
+      statusTag = `<span class="tag tag--danger">No Stock</span>`;
+    } else if (balance < 50) {
+      statusTag = `<span class="tag tag--warn">Low Stock (${balance})</span>`;
     } else {
-      statusHtml = `<span class="tag tag--success" style="background-color: #D1FAE5; color: #059669; padding: 4px 10px;">Good</span>`;
+      statusTag = `<span class="tag tag--success">In Stock</span>`;
     }
 
     return `
       <tr>
-        <td><strong>${escapeHtml(b.name)}</strong></td>
-        <td>${escapeHtml(b.size)}</td>
-        <td>${hasOpening ? Number(opening).toLocaleString() : opening}</td>
-        <td>${Number(prod).toLocaleString()}</td>
-        <td>${Number(sale).toLocaleString()}</td>
-        <td>${hasOpening ? Number(closing).toLocaleString() : closing}</td>
-        <td>${statusHtml}</td>
+        <td><strong>${escapeHtml(item.productName)}</strong></td>
+        <td><span class="badge-size">${escapeHtml(item.productSize)}</span></td>
+        <td>${item.stockAdded.toLocaleString()}</td>
+        <td>${item.sales.toLocaleString()}</td>
+        <td><strong>${balance.toLocaleString()}</strong></td>
+        <td>${statusTag}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const totalProducts = new Set(summaryList.map((s) => s.productName)).size;
+  const totalAdded = summaryList.reduce((s, item) => s + item.stockAdded, 0);
+  const totalSales = summaryList.reduce((s, item) => s + item.sales, 0);
+  const balanceStock = totalAdded - totalSales;
+
+  $("kpiStockProducts").textContent = totalProducts;
+  $("kpiStockTotalAdded").textContent = totalAdded.toLocaleString();
+  $("kpiStockTotalSales").textContent = totalSales.toLocaleString();
+  $("kpiStockBalance").textContent = balanceStock.toLocaleString();
+}
+
+$("exportStockBtn").addEventListener("click", () => {
+  const brandFilter = $("stockBrandFilter")?.value;
+  const startDate = $("stockStartDate")?.value;
+  const endDate = $("stockEndDate")?.value;
+
+  const summaryRows = [];
+  const map = {};
+
+  allBatches.forEach((b) => {
+    if (brandFilter && b.productName !== brandFilter) return;
+    if (!isDateInRange(b.date, startDate, endDate)) return;
+    const k = `${b.productName}__${b.productSize}`;
+    map[k] = map[k] || { Product: b.productName, Size: b.productSize, "Stock Added": 0, "Sales (Cases)": 0 };
+    map[k]["Stock Added"] += Number(b.quantity || 0);
+  });
+
+  allEntries.forEach((e) => {
+    if (brandFilter && e.brandName !== brandFilter) return;
+    if (!isDateInRange(e.date, startDate, endDate)) return;
+    const k = `${e.brandName}__${e.productSize}`;
+    map[k] = map[k] || { Product: e.brandName, Size: e.productSize, "Stock Added": 0, "Sales (Cases)": 0 };
+    map[k]["Sales (Cases)"] += Number(e.quantity || 0);
+  });
+
+  Object.values(map).forEach((v) => {
+    v["Available Balance"] = v["Stock Added"] - v["Sales (Cases)"];
+    summaryRows.push(v);
+  });
+
+  if (!summaryRows.length) { toast("No stock records match the selected dates"); return; }
+
+  exportToExcel(summaryRows, `Stock_Record_${startDate || "Start"}_to_${endDate || "End"}`);
+});
+
+// ============================================================
+// SECTION 3 — COMPANY SALES INBOX
+// ============================================================
+function renderResortOptionsInInbox() {
+  const select = $("inboxResortSelect");
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = `<option value="">-- Choose Resort / Company --</option>` +
+    resorts.map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)} (${escapeHtml(r.city || "Client")})</option>`).join("");
+  if (currentVal) select.value = currentVal;
+}
+
+$("inboxResortSelect")?.addEventListener("change", (e) => loadCompanyInbox(e.target.value));
+$("inboxStartDate")?.addEventListener("change", () => loadCompanyInbox($("inboxResortSelect")?.value));
+$("inboxEndDate")?.addEventListener("change", () => loadCompanyInbox($("inboxResortSelect")?.value));
+$("inboxClearDateBtn")?.addEventListener("click", () => {
+  if ($("inboxStartDate")) $("inboxStartDate").value = "";
+  if ($("inboxEndDate")) $("inboxEndDate").value = "";
+  loadCompanyInbox($("inboxResortSelect")?.value);
+});
+$("inboxSearch")?.addEventListener("input", () => loadCompanyInbox($("inboxResortSelect")?.value));
+
+function loadCompanyInbox(resortName) {
+  if (!resortName) {
+    $("inboxKpiTotalRevenue").textContent = "₹0";
+    $("inboxKpiTotalCases").textContent = "0";
+    $("inboxKpiTopSize").textContent = "—";
+    $("inboxKpiLastOrder").textContent = "—";
+    $("inboxTableBody").innerHTML = `<tr class="empty-row"><td colspan="7">Select a Resort / Company above to view its sales inbox.</td></tr>`;
+    return;
+  }
+
+  const startDate = $("inboxStartDate")?.value;
+  const endDate = $("inboxEndDate")?.value;
+
+  const companyEntries = allEntries.filter((r) => {
+    if (r.resortName !== resortName) return false;
+    return isDateInRange(r.date, startDate, endDate);
+  });
+
+  renderCompanyInboxTable(filterRows(companyEntries, $("inboxSearch")?.value, ["brandName", "productSize", "date"]));
+
+  const totalRev = companyEntries.reduce((s, r) => s + Number(r.totalAmount ?? ((r.quantity || 0) * (r.caseRate || 0))), 0);
+  const totalCases = companyEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  const sizeCounts = {};
+  companyEntries.forEach((r) => {
+    sizeCounts[r.productSize] = (sizeCounts[r.productSize] || 0) + Number(r.quantity || 0);
+  });
+  let topSize = "—";
+  let maxCnt = 0;
+  Object.entries(sizeCounts).forEach(([sz, cnt]) => {
+    if (cnt > maxCnt) { maxCnt = cnt; topSize = sz; }
+  });
+
+  const lastOrder = companyEntries.length ? companyEntries.map((r) => r.date).sort().reverse()[0] : "—";
+
+  $("inboxKpiTotalRevenue").textContent = `₹${totalRev.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  $("inboxKpiTotalCases").textContent = totalCases.toLocaleString();
+  $("inboxKpiTopSize").textContent = topSize;
+  $("inboxKpiLastOrder").textContent = lastOrder;
+}
+
+function renderCompanyInboxTable(rows) {
+  const body = $("inboxTableBody");
+  if (!rows.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No sales records found for this resort in selected date range.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => {
+    const qty = Number(r.quantity || 0);
+    const rate = Number(r.caseRate || 0);
+    const amount = r.totalAmount ?? (qty * rate);
+    return `
+      <tr>
+        <td>${escapeHtml(r.date)}</td>
+        <td><strong>${escapeHtml(r.brandName)}</strong></td>
+        <td><span class="badge-size">${escapeHtml(r.productSize)}</span></td>
+        <td>${qty.toLocaleString()} cases</td>
+        <td>₹${rate.toFixed(2)}</td>
+        <td><strong>₹${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+        <td>${escapeHtml(r.createdBy || "—")}</td>
       </tr>
     `;
   }).join("");
 }
 
-function updateStockKpis() {
-  const stockRows = Object.values(allStocks);
-  const totalClosing = stockRows.reduce((s, r) => s + (r.closingStock || 0), 0);
-  const lowStock = stockRows.filter((r) => r.openingSet && (r.closingStock ?? 0) < 100).length;
-  
-  $("kpiStockBottles").textContent = bottles.length;
-  $("kpiStockClosing").textContent = totalClosing.toLocaleString();
-  $("kpiStockLow").textContent = lowStock;
-}
+$("exportInboxBtn").addEventListener("click", () => {
+  const resortName = $("inboxResortSelect").value;
+  if (!resortName) { toast("Select a resort company first"); return; }
+  const startDate = $("inboxStartDate")?.value;
+  const endDate = $("inboxEndDate")?.value;
 
-$("exportStockBtn").addEventListener("click", async () => {
-  const stockSnap = await getDocs(collection(db, "stock"));
-  const rows = stockSnap.docs.map((d) => {
-    const data = d.data();
-    const bottle = bottles.find((b) => b.id === d.id);
-    return {
-      Bottle: bottle ? bottle.name : d.id,
-      "Opening Stock": data.openingStock ?? "",
-      "Total Production": data.totalProduction ?? 0,
-      "Total Sale": data.totalSale ?? 0,
-      "Closing Stock": data.closingStock ?? "",
-    };
+  const companyEntries = allEntries.filter((r) => {
+    if (r.resortName !== resortName) return false;
+    return isDateInRange(r.date, startDate, endDate);
   });
-  exportToExcel(rows, "Stock_Record");
+
+  if (!companyEntries.length) { toast("No records match the selected date range"); return; }
+
+  exportToExcel(
+    companyEntries.map((r) => ({
+      Date: r.date,
+      Resort: r.resortName,
+      Product: r.brandName,
+      Size: r.productSize,
+      "Cases Purchased": r.quantity,
+      "Case Rate (₹)": r.caseRate,
+      "Total Amount (₹)": r.totalAmount ?? (r.quantity * r.caseRate),
+      "Recorded By": r.createdBy,
+    })),
+    `Inbox_${resortName.replace(/[^a-zA-Z0-9]/g, "_")}_${startDate || "Start"}_to_${endDate || "End"}`
+  );
 });
 
 // ============================================================
-// SECTION 3 — ADMIN
+// SECTION 4 — ADMIN PANEL
 // ============================================================
-$("bottleForm").addEventListener("submit", async (e) => {
+
+// 1. Register Resort / Company
+$("resortForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (currentProfile?.role !== "admin") { toast("Admins only"); return; }
+  const name = $("resortName").value.trim();
+  const contact = $("resortContact").value.trim();
+  const phone = $("resortPhone").value.trim();
+  const city = $("resortCity").value.trim();
+
+  if (!name) { toast("Enter resort company name"); return; }
+
   try {
-    await addDoc(collection(db, "bottles"), {
-      name: $("bottleName").value.trim(),
-      size: $("bottleSize").value,
+    await addDoc(collection(db, "resorts"), {
+      name, contact, phone, city,
       createdAt: serverTimestamp(),
     });
     e.target.reset();
-    toast("Bottle registered");
+    toast("Resort company registered");
   } catch (err) {
-    console.error("Register bottle error:", err);
-    toast("Error registering bottle: " + err.message);
+    console.error("Register resort error:", err);
+    toast("Error registering resort: " + err.message);
+  }
+});
+
+function renderResortsTable(rows) {
+  const body = $("resortsTableBody");
+  if (!rows.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="6">No resorts registered yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => `
+    <tr>
+      <td><strong>${escapeHtml(r.name)}</strong></td>
+      <td>${escapeHtml(r.contact || "—")}</td>
+      <td>${escapeHtml(r.phone || "—")}</td>
+      <td>${escapeHtml(r.city || "—")}</td>
+      <td>${fmtDate(r.createdAt)}</td>
+      <td>
+        <button class="btn btn--ghost btn--sm btn-view-inbox" data-resort="${escapeHtml(r.name)}">
+          View Inbox
+        </button>
+      </td>
+    </tr>
+  `).join("");
+
+  document.querySelectorAll(".btn-view-inbox").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.resort;
+      goToPanel("panel-inbox");
+      $("inboxResortSelect").value = name;
+      loadCompanyInbox(name);
+    });
+  });
+
+  $("kpiAdminResorts").textContent = rows.length;
+}
+
+// 2. Register Product / Customisation
+$("bottleForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (currentProfile?.role !== "admin") { toast("Admins only"); return; }
+  const name = $("bottleName").value.trim();
+  const size = $("bottleSize").value;
+  const rate = Number($("bottleRate").value || 0);
+
+  if (!name) { toast("Enter product name"); return; }
+
+  try {
+    await addDoc(collection(db, "bottles"), {
+      name, size, rate,
+      createdAt: serverTimestamp(),
+    });
+    e.target.reset();
+    toast("Product registered");
+  } catch (err) {
+    console.error("Register product error:", err);
+    toast("Error registering product: " + err.message);
   }
 });
 
 function renderBottlesTable(rows) {
   const body = $("bottlesTableBody");
   if (!rows.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="3">None yet.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="4">No products registered yet.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((b) => `
-    <tr><td>${escapeHtml(b.name)}</td><td>${escapeHtml(b.size)}</td><td>${fmtDate(b.createdAt)}</td></tr>
+    <tr>
+      <td><strong>${escapeHtml(b.name)}</strong></td>
+      <td><span class="badge-size">${escapeHtml(b.size)}</span></td>
+      <td>₹${Number(b.rate || 0).toFixed(2)}</td>
+      <td>${fmtDate(b.createdAt)}</td>
+    </tr>
   `).join("");
-  $("kpiAdminBottles").textContent = rows.length;
+  $("kpiAdminProducts").textContent = rows.length;
 }
 
-// Registering a user creates a real Firebase Auth account without
-// signing the admin out: we spin up a throwaway secondary app instance,
-// create the account there, then tear that instance down.
+// 3. Register User Account
 $("userForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (currentProfile?.role !== "admin") { toast("Admins only"); return; }
@@ -687,10 +954,10 @@ $("userForm").addEventListener("submit", async (e) => {
       name, email, role, createdAt: serverTimestamp(),
     });
     await signOut(secondaryAuth);
-    toast("User registered");
+    toast("User registered successfully");
     e.target.reset();
   } catch (err) {
-    toast(err.code === "auth/email-already-in-use" ? "That email is already registered" : "Couldn't register user");
+    toast(err.code === "auth/email-already-in-use" ? "That email is already registered" : "Couldn't register user: " + err.message);
   } finally {
     await deleteApp(secondaryApp);
   }
@@ -703,72 +970,117 @@ function renderUsersTable(rows) {
     return;
   }
   body.innerHTML = rows.map((u) => `
-    <tr><td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td><td>${escapeHtml(u.role)}</td></tr>
+    <tr>
+      <td><strong>${escapeHtml(u.name)}</strong></td>
+      <td>${escapeHtml(u.email)}</td>
+      <td><span class="role-pill">${escapeHtml(u.role)}</span></td>
+    </tr>
   `).join("");
   $("kpiAdminUsers").textContent = rows.length;
   $("kpiAdminAdmins").textContent = rows.filter((u) => u.role === "admin").length;
 }
 
+// Dropdown synchronization
+function populateDropdownOptions() {
+  const entryResortSel = $("entryResort");
+  if (entryResortSel) {
+    const curVal = entryResortSel.value;
+    entryResortSel.innerHTML = `<option value="">Select Resort / Company</option>` +
+      resorts.map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)} (${escapeHtml(r.city || "Client")})</option>`).join("");
+    if (curVal) entryResortSel.value = curVal;
+  }
+  renderResortOptionsInInbox();
+
+  const uniqueBrands = [...new Set([...bottles.map((b) => b.name), ...allEntries.map((e) => e.brandName), ...allBatches.map((b) => b.productName)])].filter(Boolean).sort();
+  
+  const entryBrandSel = $("entryBrand");
+  if (entryBrandSel) {
+    const curVal = entryBrandSel.value;
+    entryBrandSel.innerHTML = `<option value="">Select Product / Brand</option>` +
+      uniqueBrands.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+    if (curVal) entryBrandSel.value = curVal;
+  }
+
+  const batchProdSel = $("batchProduct");
+  if (batchProdSel) {
+    const curVal = batchProdSel.value;
+    batchProdSel.innerHTML = `<option value="">Select Product / Brand</option>` +
+      uniqueBrands.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+    if (curVal) batchProdSel.value = curVal;
+  }
+
+  const dashProdSel = $("dashProductSelect");
+  if (dashProdSel) {
+    const curVal = dashProdSel.value;
+    dashProdSel.innerHTML = `<option value="">-- All Products (Overview) --</option>` +
+      uniqueBrands.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+    if (curVal) dashProdSel.value = curVal;
+  }
+
+  const stockFilterSel = $("stockBrandFilter");
+  if (stockFilterSel) {
+    const curVal = stockFilterSel.value;
+    stockFilterSel.innerHTML = `<option value="">-- All Product Brands (Show All Stock) --</option>` +
+      uniqueBrands.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+    if (curVal) stockFilterSel.value = curVal;
+  }
+}
+
 // ============================================================
-// LIVE LISTENERS (start once logged in)
+// FIRESTORE REALTIME LISTENERS
 // ============================================================
 function startListeners() {
-  onSnapshot(query(collection(db, "entries"), orderBy("createdAt", "desc")), (qs) => {
-    allEntries = qs.docs.map((d) => d.data());
-    renderEntries(filterRows(allEntries, $("entriesSearch").value, ["brandName", "productSize"]));
-    updateEntryKpis(allEntries);
+  onSnapshot(query(collection(db, "resorts"), orderBy("createdAt", "desc")), (qs) => {
+    resorts = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
+    populateDropdownOptions();
+    if (currentProfile?.role === "admin") {
+      renderResortsTable(resorts);
+    }
   });
 
   onSnapshot(query(collection(db, "bottles"), orderBy("createdAt", "desc")), (qs) => {
     bottles = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderBottleOptions();
-    renderBrandOptions();
+    populateDropdownOptions();
     if (currentProfile?.role === "admin") {
       renderBottlesTable(bottles);
     }
-    renderAllStockTable();
-    updateStockKpis();
+    renderDashboard();
   });
 
-  onSnapshot(collection(db, "stock"), (qs) => {
-    allStocks = {};
-    qs.docs.forEach((d) => {
-      allStocks[d.id] = d.data();
-    });
-    renderAllStockTable();
-    updateStockKpis();
-    if (selectedBottleId) {
-      const data = allStocks[selectedBottleId];
-      if (data && data.openingSet) {
-        $("openingStockCard").hidden = true;
-        $("movementForm").hidden = false;
-        $("stockChartCard").hidden = false;
-        updateMeters(data);
-      } else {
-        $("openingStockCard").hidden = false;
-        $("movementForm").hidden = true;
-        $("stockChartCard").hidden = true;
-        $("meterOpening").textContent = "—";
-        $("meterProduction").textContent = "—";
-        $("meterSale").textContent = "—";
-        $("meterClosing").textContent = "—";
-      }
-    }
+  onSnapshot(query(collection(db, "entries"), orderBy("createdAt", "desc")), (qs) => {
+    allEntries = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
+    refreshEntriesView();
+    renderStockSummary();
+    renderDashboard();
+    const selInboxResort = $("inboxResortSelect")?.value;
+    if (selInboxResort) loadCompanyInbox(selInboxResort);
+  });
+
+  onSnapshot(query(collection(db, "stockBatches"), orderBy("createdAt", "desc")), (qs) => {
+    allBatches = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
+    refreshStockView();
+    renderDashboard();
   });
 
   if (currentProfile?.role === "admin") {
     onSnapshot(collection(db, "users"), (qs) => {
-      allUsers = qs.docs.map((d) => d.data());
+      allUsers = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
       renderUsersTable(allUsers);
     });
   }
 }
 
 // ============================================================
-// HELPERS
+// UTILITY FUNCTIONS
 // ============================================================
+function filterRows(rows, term, fields) {
+  const q = (term || "").trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((r) => fields.some((f) => String(r[f] ?? "").toLowerCase().includes(q)));
+}
+
 function exportToExcel(rows, filenameBase) {
-  if (!rows.length) { toast("Nothing to export yet"); return; }
+  if (!rows.length) { toast("Nothing to export"); return; }
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, filenameBase.slice(0, 30));
