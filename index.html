@@ -3,9 +3,9 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0B2027">
-  <title>Prata Aqua — Customize Brand</title>
+  <title>Prata Aqua — Resort Customisation & Stock Management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -27,7 +27,7 @@
       <div class="brand-mark">
         <img class="wave-logo" src="logo.png" alt="Prata Aqua Logo">
         <h1>PRATA AQUA</h1>
-        <p class="brand-sub">Customize Brand</p>
+        <p class="brand-sub">Resort Customisation & Stock</p>
       </div>
 
       <form id="loginForm" class="stack">
@@ -58,12 +58,21 @@
         <img class="wave-logo wave-logo--sm" src="logo.png" alt="Prata Aqua Logo">
         <div>
           <span class="sidebar__brand-name">PRATA AQUA</span>
-          <span class="sidebar__brand-sub">Customize Brand</span>
+          <span class="sidebar__brand-sub">Resort & Stock Portal</span>
         </div>
       </div>
 
       <nav class="sidebar__nav">
-        <button class="navlink is-active" data-panel="panel-entry">
+        <button class="navlink is-active" data-panel="panel-dashboard">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="7" height="9" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="14" y="3" width="7" height="5" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="14" y="12" width="7" height="9" rx="1" stroke="currentColor" stroke-width="2"/>
+            <rect x="3" y="16" width="7" height="5" rx="1" stroke="currentColor" stroke-width="2"/>
+          </svg>
+          <span>Dashboard</span>
+        </button>
+        <button class="navlink" data-panel="panel-entry">
           <svg viewBox="0 0 24 24" fill="none">
             <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
           </svg>
@@ -71,10 +80,15 @@
         </button>
         <button class="navlink" data-panel="panel-stock">
           <svg viewBox="0 0 24 24" fill="none">
-            <path d="M4 21V9l8-6 8 6v12M4 21h16M9 21v-6h6v6" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <span>Stock Record</span>
+        </button>
+        <button class="navlink" data-panel="panel-inbox">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Company Inbox</span>
         </button>
         <button class="navlink" data-panel="panel-admin" id="navAdminLink">
           <svg viewBox="0 0 24 24" fill="none">
@@ -111,8 +125,119 @@
 
     <main class="content">
 
-      <!-- ============ SECTION 1: DATA ENTRY ============ -->
-      <section id="panel-entry" class="panel">
+      <!-- ============ SECTION 0: DASHBOARD ============ -->
+      <section id="panel-dashboard" class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h2>Product Sales & Stock Dashboard</h2>
+          </div>
+          <button class="btn btn--primary btn--sm" id="exportDashBtn">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Export Selected Dates to Excel
+          </button>
+        </div>
+
+        <div class="kpi-row" id="dashKpiRow">
+          <div class="kpi"><span class="kpi__label">Gross Sales Revenue</span><span class="kpi__value" id="dashKpiTotalRevenue">₹0</span></div>
+          <div class="kpi"><span class="kpi__label">Total Cases Sold</span><span class="kpi__value" id="dashKpiTotalCases">0</span></div>
+          <div class="kpi"><span class="kpi__label">Available Stock</span><span class="kpi__value" id="dashKpiStockBalance">0</span></div>
+          <div class="kpi"><span class="kpi__label">Top Selling Product</span><span class="kpi__value" id="dashKpiTopProduct">—</span></div>
+        </div>
+
+        <!-- Filter Bar: Product + Date Range -->
+        <div class="card form-grid" style="margin-bottom: 1rem;">
+          <label class="field">
+            <span>Filter Product</span>
+            <select id="dashProductSelect" class="select-lg">
+              <option value="">-- All Products (Overview) --</option>
+            </select>
+          </label>
+          <div class="date-filter-bar">
+            <label class="field">
+              <span>From Date</span>
+              <input type="date" id="dashStartDate">
+            </label>
+            <label class="field">
+              <span>To Date</span>
+              <input type="date" id="dashEndDate">
+            </label>
+            <button type="button" class="btn btn--ghost btn--sm" id="dashClearDateBtn" style="align-self:flex-end;">Clear Dates</button>
+          </div>
+        </div>
+
+        <!-- Product Cards Grid -->
+        <div id="dashProductCardsGrid" class="dash-cards-grid" style="margin-bottom:1.5rem;">
+          <!-- Rendered dynamically by JS -->
+        </div>
+
+        <!-- Product Sales Ledger Table -->
+        <div class="card table-card" style="margin-bottom: 1.5rem;">
+          <div class="table-toolbar">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Product Sales Activity Ledger</h3>
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <input type="search" id="dashSearch" placeholder="Search by resort, product, size or date…">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="dashTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product Name</th>
+                  <th>Resort / Company</th>
+                  <th>Size</th>
+                  <th>Cases Sold</th>
+                  <th>Case Rate</th>
+                  <th>Total Amount</th>
+                  <th>Recorded By</th>
+                </tr>
+              </thead>
+              <tbody id="dashTableBody">
+                <tr class="empty-row">
+                  <td colspan="8">No sales records available.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Product Stock Batch History Table -->
+        <div class="card table-card">
+          <div class="table-toolbar">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Product Registered Stock Batches</h3>
+          </div>
+          <div class="table-scroll">
+            <table id="dashStockBatchTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Batch Number</th>
+                  <th>Product Name</th>
+                  <th>Size</th>
+                  <th>Quantity Added</th>
+                  <th>Note</th>
+                  <th>Added By</th>
+                </tr>
+              </thead>
+              <tbody id="dashStockBatchTableBody">
+                <tr class="empty-row">
+                  <td colspan="7">No stock batch records available.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION 1: CUSTOMISATION ENTRY ============ -->
+      <section id="panel-entry" class="panel" hidden>
         <div class="panel-head">
           <div>
             <p class="eyebrow">Section 1</p>
@@ -123,59 +248,80 @@
               <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round" />
             </svg>
-            Export to Excel
+            Export Selected Dates to Excel
           </button>
         </div>
 
         <div class="kpi-row" id="entryKpiRow">
-          <div class="kpi"><span class="kpi__label">Total entries</span><span class="kpi__value"
-              id="kpiEntryTotal">0</span></div>
-          <div class="kpi"><span class="kpi__label">This month</span><span class="kpi__value"
-              id="kpiEntryMonth">0</span></div>
-          <div class="kpi"><span class="kpi__label">Brands tracked</span><span class="kpi__value"
-              id="kpiEntryBrands">0</span></div>
-          <div class="kpi"><span class="kpi__label">Avg. case rate</span><span class="kpi__value"
-              id="kpiEntryAvgRate">₹0</span></div>
+          <div class="kpi"><span class="kpi__label">Total sales entries</span><span class="kpi__value" id="kpiEntryTotal">0</span></div>
+          <div class="kpi"><span class="kpi__label">This month</span><span class="kpi__value" id="kpiEntryMonth">0</span></div>
+          <div class="kpi"><span class="kpi__label">Resorts served</span><span class="kpi__value" id="kpiEntryResorts">0</span></div>
+          <div class="kpi"><span class="kpi__label">Total revenue</span><span class="kpi__value" id="kpiEntryRevenue">₹0</span></div>
         </div>
 
         <form id="entryForm" class="card form-grid">
           <label class="field">
-            <span>Brand name</span>
-            <select id="entryBrand" required>
-              <option value="">Select brand</option>
+            <span>Select Resort / Company</span>
+            <select id="entryResort" required>
+              <option value="">Select Resort / Company</option>
             </select>
           </label>
           <label class="field">
-            <span>Date</span>
+            <span>Select Product / Brand</span>
+            <select id="entryBrand" required>
+              <option value="">Select product first</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Product Size</span>
+            <select id="entrySize" required>
+              <option value="">Select size</option>
+              <option value="200 ML">200 ML</option>
+              <option value="750 ML">750 ML</option>
+              <option value="500 ML">500 ML</option>
+              <option value="1 L">1 L</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Sale Date</span>
             <input type="date" id="entryDate" required>
           </label>
           <label class="field">
-            <span>Case rate (₹ per case)</span>
-            <input type="number" id="entryRate" required min="0" step="0.01" placeholder="e.g. 65.00">
+            <span>Case Rate (₹ per case)</span>
+            <input type="number" id="entryRate" required min="0" step="0.01" placeholder="e.g. 150.00">
           </label>
           <label class="field">
             <span>Quantity (cases)</span>
-            <input type="number" id="entryQty" required min="1" step="1" placeholder="e.g. 100">
+            <input type="number" id="entryQty" required min="1" step="1" placeholder="e.g. 50">
           </label>
-          <label class="field">
-            <span>Product size</span>
-            <select id="entrySize" required>
-              <option value="">Select brand first</option>
-            </select>
-          </label>
+          <div class="field field--wide calculation-preview">
+            <span class="calc-label">Total Amount:</span>
+            <span id="entryTotalAmountCalc" class="calc-value">₹0.00</span>
+          </div>
           <div class="form-actions">
-            <button type="submit" class="btn btn--primary">Save entry</button>
+            <button type="submit" class="btn btn--primary btn--block-mobile">Save Customisation Entry</button>
           </div>
         </form>
 
         <div class="card table-card">
           <div class="table-toolbar">
+            <div class="date-filter-bar" style="margin: 0;">
+              <label class="field">
+                <span>From Date</span>
+                <input type="date" id="entryStartDate">
+              </label>
+              <label class="field">
+                <span>To Date</span>
+                <input type="date" id="entryEndDate">
+              </label>
+              <button type="button" class="btn btn--ghost btn--sm" id="entryClearDateBtn" style="align-self:flex-end;">Clear Dates</button>
+            </div>
             <div class="search-box">
               <svg viewBox="0 0 24 24" fill="none">
                 <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
                 <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
               </svg>
-              <input type="search" id="entriesSearch" placeholder="Search by brand or size…">
+              <input type="search" id="entriesSearch" placeholder="Search by resort, brand or size…">
             </div>
           </div>
           <div class="table-scroll">
@@ -183,17 +329,18 @@
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Brand</th>
+                  <th>Resort / Company</th>
+                  <th>Product</th>
                   <th>Size</th>
-                  <th>Quantity (cases)</th>
-                  <th>Case rate</th>
+                  <th>Cases</th>
+                  <th>Case Rate</th>
                   <th>Total Amount</th>
                   <th>By</th>
                 </tr>
               </thead>
               <tbody id="entriesTableBody">
                 <tr class="empty-row">
-                  <td colspan="7">No entries yet.</td>
+                  <td colspan="8">No sales entries recorded yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -201,122 +348,193 @@
         </div>
       </section>
 
-      <!-- ============ SECTION 2: STOCK RECORD ============ -->
+      <!-- ============ SECTION 2: NORMAL STOCK RECORD ============ -->
       <section id="panel-stock" class="panel" hidden>
         <div class="panel-head">
           <div>
             <p class="eyebrow">Section 2</p>
-            <h2>Stock Record</h2>
+            <h2>Normal Stock Record</h2>
           </div>
           <button class="btn btn--primary btn--sm" id="exportStockBtn">
             <svg viewBox="0 0 24 24" fill="none">
               <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round" />
             </svg>
-            Export to Excel
+            Export Selected Dates to Excel
           </button>
         </div>
 
         <div class="kpi-row" id="stockKpiRow">
-          <div class="kpi"><span class="kpi__label">Bottles tracked</span><span class="kpi__value"
-              id="kpiStockBottles">0</span></div>
-          <div class="kpi"><span class="kpi__label">Total closing stock</span><span class="kpi__value"
-              id="kpiStockClosing">0</span></div>
-          <div class="kpi kpi--warn"><span class="kpi__label">Low stock alerts</span><span class="kpi__value"
-              id="kpiStockLow">0</span></div>
+          <div class="kpi"><span class="kpi__label">Products Tracked</span><span class="kpi__value" id="kpiStockProducts">0</span></div>
+          <div class="kpi"><span class="kpi__label">Total Stock Added</span><span class="kpi__value" id="kpiStockTotalAdded">0</span></div>
+          <div class="kpi"><span class="kpi__label">Total Custom Sales</span><span class="kpi__value" id="kpiStockTotalSales">0</span></div>
+          <div class="kpi"><span class="kpi__label">Available Stock</span><span class="kpi__value" id="kpiStockBalance">0</span></div>
         </div>
 
+        <!-- Add Stock with Batch Number Form -->
+        <div class="card" style="margin-bottom:1rem;">
+          <h3 class="card-title">Add Normal Product Stock (Batch Entry)</h3>
+          <form id="stockBatchForm" class="form-grid">
+            <label class="field">
+              <span>Select Product</span>
+              <select id="batchProduct" required>
+                <option value="">Select product</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Product Size</span>
+              <select id="batchSize" required>
+                <option value="">Select size</option>
+                <option value="200 ML">200 ML</option>
+                <option value="750 ML">750 ML</option>
+                <option value="500 ML">500 ML</option>
+                <option value="1 L">1 L</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Batch Number</span>
+              <input type="text" id="batchNumber" required placeholder="e.g. BATCH-2026-001">
+            </label>
+            <label class="field">
+              <span>Stock Entry Date</span>
+              <input type="date" id="batchDate" required>
+            </label>
+            <label class="field">
+              <span>Quantity Added (cases)</span>
+              <input type="number" id="batchQty" required min="1" step="1" placeholder="e.g. 500">
+            </label>
+            <label class="field">
+              <span>Remarks / Note (optional)</span>
+              <input type="text" id="batchNote" placeholder="e.g. Fresh production lot">
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary btn--block-mobile">Register Batch Stock</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Brand Stock & Date Filter Card -->
+        <div class="card form-grid" style="margin-bottom: 1rem;">
+          <label class="field">
+            <span>Filter Stock View by Product Brand</span>
+            <select id="stockBrandFilter" class="select-lg">
+              <option value="">-- All Product Brands (Show All Stock) --</option>
+            </select>
+          </label>
+          <div class="date-filter-bar">
+            <label class="field">
+              <span>From Date</span>
+              <input type="date" id="stockStartDate">
+            </label>
+            <label class="field">
+              <span>To Date</span>
+              <input type="date" id="stockEndDate">
+            </label>
+            <button type="button" class="btn btn--ghost btn--sm" id="stockClearDateBtn" style="align-self:flex-end;">Clear Dates</button>
+          </div>
+        </div>
+
+        <!-- Summary Table -->
         <div class="card table-card" style="margin-bottom: 1.5rem;">
-          <h3 class="card-title" style="padding: 1.25rem 1.5rem 0.5rem;">All Stocks Summary</h3>
+          <h3 class="card-title" style="padding: 1rem 1.25rem 0.25rem;">All Stock Balance Summary</h3>
           <div class="table-scroll">
-            <table id="allStockTable">
+            <table id="stockSummaryTable">
               <thead>
                 <tr>
-                  <th>Bottle / Customisation</th>
+                  <th>Product Brand</th>
                   <th>Size</th>
-                  <th>Opening Stock</th>
-                  <th>Total Production</th>
-                  <th>Total Sale</th>
-                  <th>Closing Stock</th>
+                  <th>Stock Added (cases)</th>
+                  <th>Sales (cases)</th>
+                  <th>Current Balance</th>
                   <th>Status</th>
                 </tr>
               </thead>
-              <tbody id="allStockTableBody">
+              <tbody id="stockSummaryTableBody">
                 <tr class="empty-row">
-                  <td colspan="7">Loading stock summary...</td>
+                  <td colspan="6">No stock records yet. Add batch stock above.</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        <div class="card form-grid">
-          <label class="field field--wide">
-            <span>Bottle / customisation</span>
-            <select id="stockBottleSelect"></select>
-          </label>
+        <!-- Detailed Batch Register Table -->
+        <div class="card table-card">
+          <div class="table-toolbar">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Batch Stock History Register</h3>
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+                <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <input type="search" id="batchSearch" placeholder="Search batch number, product or size…">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="batchTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Batch Number</th>
+                  <th>Product Brand</th>
+                  <th>Size</th>
+                  <th>Quantity Added</th>
+                  <th>Note</th>
+                  <th>Added By</th>
+                </tr>
+              </thead>
+              <tbody id="batchTableBody">
+                <tr class="empty-row">
+                  <td colspan="7">No stock batches registered yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION 3: COMPANY SALES INBOX ============ -->
+      <section id="panel-inbox" class="panel" hidden>
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Section 3</p>
+            <h2>Company Sales Inbox</h2>
+          </div>
+          <button class="btn btn--primary btn--sm" id="exportInboxBtn">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            Export Selected Dates to Excel
+          </button>
         </div>
 
-        <div id="stockMeter" class="meter-grid" hidden>
-          <div class="meter meter--opening">
-            <span class="meter__label">Opening stock</span>
-            <span class="meter__value" id="meterOpening">0</span>
-            <span class="meter__note" id="openingLockNote">Set once, then locked</span>
-          </div>
-          <div class="meter meter--production">
-            <span class="meter__label">Total production</span>
-            <span class="meter__value" id="meterProduction">0</span>
-          </div>
-          <div class="meter meter--sale">
-            <span class="meter__label">Total sale</span>
-            <span class="meter__value" id="meterSale">0</span>
-          </div>
-          <div class="meter meter--closing">
-            <span class="meter__label">Closing stock</span>
-            <span class="meter__value" id="meterClosing">0</span>
-            <span class="meter__note">Opening − Sale + Production</span>
-          </div>
-        </div>
-
-        <div class="card chart-card" id="stockChartCard" hidden>
-          <h3 class="card-title">Movement trend</h3>
-          <div class="chart-wrap"><canvas id="stockChart" height="180"></canvas></div>
-        </div>
-
-        <div class="card form-grid" id="openingStockCard" hidden>
+        <div class="card form-grid" style="margin-bottom:1rem;">
           <label class="field">
-            <span>Set opening stock (one-time, then locked)</span>
-            <input type="number" id="openingStockInput" min="0" placeholder="e.g. 5000">
-          </label>
-          <div class="form-actions">
-            <button class="btn btn--primary" id="setOpeningBtn">Lock opening stock</button>
-          </div>
-        </div>
-
-        <form id="movementForm" class="card form-grid" hidden>
-          <label class="field">
-            <span>Movement type</span>
-            <select id="movementType">
-              <option value="production">Production (add)</option>
-              <option value="sale">Sale (subtract)</option>
+            <span>Select Registered Resort / Company to view Inbox</span>
+            <select id="inboxResortSelect" class="select-lg">
+              <option value="">-- Choose Resort / Company --</option>
             </select>
           </label>
-          <label class="field">
-            <span>Quantity (cases)</span>
-            <input type="number" id="movementQty" min="1" required placeholder="e.g. 120">
-          </label>
-          <label class="field">
-            <span>Date</span>
-            <input type="date" id="movementDate" required>
-          </label>
-          <label class="field field--wide">
-            <span>Note (optional)</span>
-            <input type="text" id="movementNote" placeholder="e.g. Order #4521">
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="btn btn--primary">Add movement</button>
+          <div class="date-filter-bar">
+            <label class="field">
+              <span>From Date</span>
+              <input type="date" id="inboxStartDate">
+            </label>
+            <label class="field">
+              <span>To Date</span>
+              <input type="date" id="inboxEndDate">
+            </label>
+            <button type="button" class="btn btn--ghost btn--sm" id="inboxClearDateBtn" style="align-self:flex-end;">Clear Dates</button>
           </div>
-        </form>
+        </div>
+
+        <div class="kpi-row" id="inboxKpiRow">
+          <div class="kpi"><span class="kpi__label">Total Purchases</span><span class="kpi__value" id="inboxKpiTotalRevenue">₹0</span></div>
+          <div class="kpi"><span class="kpi__label">Total Cases Ordered</span><span class="kpi__value" id="inboxKpiTotalCases">0</span></div>
+          <div class="kpi"><span class="kpi__label">Top Size Ordered</span><span class="kpi__value" id="inboxKpiTopSize">—</span></div>
+          <div class="kpi"><span class="kpi__label">Last Order Date</span><span class="kpi__value" id="inboxKpiLastOrder">—</span></div>
+        </div>
 
         <div class="card table-card">
           <div class="table-toolbar">
@@ -325,23 +543,25 @@
                 <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
                 <path d="M21 21l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
               </svg>
-              <input type="search" id="movementsSearch" placeholder="Search by note or type…">
+              <input type="search" id="inboxSearch" placeholder="Search company sales records…">
             </div>
           </div>
           <div class="table-scroll">
-            <table id="movementsTable">
+            <table id="inboxTable">
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Type</th>
-                  <th>Qty</th>
-                  <th>Note</th>
-                  <th>By</th>
+                  <th>Product</th>
+                  <th>Size</th>
+                  <th>Cases Purchased</th>
+                  <th>Case Rate</th>
+                  <th>Total Amount</th>
+                  <th>Recorded By</th>
                 </tr>
               </thead>
-              <tbody id="movementsTableBody">
+              <tbody id="inboxTableBody">
                 <tr class="empty-row">
-                  <td colspan="5">Select a bottle to see its movements.</td>
+                  <td colspan="7">Select a Resort / Company above to view its sales inbox.</td>
                 </tr>
               </tbody>
             </table>
@@ -349,52 +569,83 @@
         </div>
       </section>
 
-      <!-- ============ SECTION 3: ADMIN ============ -->
+      <!-- ============ SECTION 4: ADMIN ============ -->
       <section id="panel-admin" class="panel" hidden>
         <div class="panel-head">
           <div>
-            <p class="eyebrow">Section 3</p>
-            <h2>Admin</h2>
+            <p class="eyebrow">Section 4</p>
+            <h2>Admin Panel</h2>
           </div>
         </div>
 
         <div class="kpi-row" id="adminKpiRow">
-          <div class="kpi"><span class="kpi__label">Registered bottles</span><span class="kpi__value"
-              id="kpiAdminBottles">0</span></div>
-          <div class="kpi"><span class="kpi__label">Team members</span><span class="kpi__value"
-              id="kpiAdminUsers">0</span></div>
-          <div class="kpi"><span class="kpi__label">Admins</span><span class="kpi__value" id="kpiAdminAdmins">0</span>
-          </div>
+          <div class="kpi"><span class="kpi__label">Registered Resorts</span><span class="kpi__value" id="kpiAdminResorts">0</span></div>
+          <div class="kpi"><span class="kpi__label">Registered Products</span><span class="kpi__value" id="kpiAdminProducts">0</span></div>
+          <div class="kpi"><span class="kpi__label">Team Members</span><span class="kpi__value" id="kpiAdminUsers">0</span></div>
+          <div class="kpi"><span class="kpi__label">Admins</span><span class="kpi__value" id="kpiAdminAdmins">0</span></div>
         </div>
 
         <div class="admin-grid">
+          <!-- Register Resort / Company Card -->
           <div class="card">
-            <h3 class="card-title">Register a new bottle / customisation</h3>
-            <form id="bottleForm" class="form-grid">
+            <h3 class="card-title">Register Vendor / Resort Company</h3>
+            <form id="resortForm" class="form-grid">
               <label class="field">
-                <span>Bottle name</span>
-                <input type="text" id="bottleName" required placeholder="e.g. Prata Aqua 500ml">
+                <span>Resort / Company Name</span>
+                <input type="text" id="resortName" required placeholder="e.g. Taj Exotica Resort">
               </label>
               <label class="field">
-                <span>Default size</span>
-                <select id="bottleSize" required>
-                  <option value="">Select size</option>
-                  <option>200 ml</option>
-                  <option>750 ml</option>
-                  <option>1 L</option>
-                </select>
+                <span>Contact Person</span>
+                <input type="text" id="resortContact" placeholder="e.g. Manager Mr. Sharma">
+              </label>
+              <label class="field">
+                <span>Phone / Mobile</span>
+                <input type="tel" id="resortPhone" placeholder="e.g. +91 9876543210">
+              </label>
+              <label class="field">
+                <span>City / Location</span>
+                <input type="text" id="resortCity" placeholder="e.g. Goa / Udaipur">
               </label>
               <div class="form-actions">
-                <button type="submit" class="btn btn--primary">Register bottle</button>
+                <button type="submit" class="btn btn--primary btn--block-mobile">Register Resort Company</button>
               </div>
             </form>
           </div>
 
+          <!-- Register Product / Customisation Card -->
           <div class="card">
-            <h3 class="card-title">Register a new user</h3>
+            <h3 class="card-title">Register Product / Customisation</h3>
+            <form id="bottleForm" class="form-grid">
+              <label class="field">
+                <span>Product Brand Name</span>
+                <input type="text" id="bottleName" required placeholder="e.g. Prata Aqua Premium">
+              </label>
+              <label class="field">
+                <span>Default Size</span>
+                <select id="bottleSize" required>
+                  <option value="">Select size</option>
+                  <option value="200 ML">200 ML</option>
+                  <option value="750 ML">750 ML</option>
+                  <option value="500 ML">500 ML</option>
+                  <option value="1 L">1 L</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Default Case Rate (₹)</span>
+                <input type="number" id="bottleRate" min="0" step="0.01" placeholder="e.g. 120.00">
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="btn btn--primary btn--block-mobile">Register Product</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Register User Card -->
+          <div class="card">
+            <h3 class="card-title">Register User Account</h3>
             <form id="userForm" class="form-grid">
               <label class="field">
-                <span>Full name</span>
+                <span>Full Name</span>
                 <input type="text" id="userFullName" required placeholder="e.g. Rakesh Patel">
               </label>
               <label class="field">
@@ -402,7 +653,7 @@
                 <input type="email" id="userEmail" required placeholder="name@prataaqua.com">
               </label>
               <label class="field">
-                <span>Temporary password</span>
+                <span>Temporary Password</span>
                 <input type="text" id="userPassword" required minlength="6" placeholder="min. 6 characters">
               </label>
               <label class="field">
@@ -413,35 +664,62 @@
                 </select>
               </label>
               <div class="form-actions">
-                <button type="submit" class="btn btn--primary">Register user</button>
+                <button type="submit" class="btn btn--primary btn--block-mobile">Register User</button>
               </div>
             </form>
-            <p id="adminOnlyNote" class="form-hint" hidden>Only admins can register bottles and users.</p>
+            <p id="adminOnlyNote" class="form-hint" hidden>Only admins can register resorts, products, and users.</p>
           </div>
         </div>
 
+        <!-- Table 1: Registered Resorts -->
         <div class="card table-card">
-          <h3 class="card-title">Registered bottles</h3>
+          <h3 class="card-title" style="padding-left:1rem;">Registered Resort Companies</h3>
           <div class="table-scroll">
-            <table id="bottlesTable">
+            <table id="resortsTable">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Size</th>
-                  <th>Registered</th>
+                  <th>Resort Company Name</th>
+                  <th>Contact Person</th>
+                  <th>Phone</th>
+                  <th>Location</th>
+                  <th>Registered Date</th>
+                  <th>Action</th>
                 </tr>
               </thead>
-              <tbody id="bottlesTableBody">
+              <tbody id="resortsTableBody">
                 <tr class="empty-row">
-                  <td colspan="3">None yet.</td>
+                  <td colspan="6">No resorts registered yet. Use the form above to add resorts.</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
 
+        <!-- Table 2: Registered Products -->
         <div class="card table-card">
-          <h3 class="card-title">Users</h3>
+          <h3 class="card-title" style="padding-left:1rem;">Registered Products & Customisations</h3>
+          <div class="table-scroll">
+            <table id="bottlesTable">
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th>Default Size</th>
+                  <th>Base Rate (₹)</th>
+                  <th>Registered</th>
+                </tr>
+              </thead>
+              <tbody id="bottlesTableBody">
+                <tr class="empty-row">
+                  <td colspan="4">No products registered yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Table 3: Users -->
+        <div class="card table-card">
+          <h3 class="card-title" style="padding-left:1rem;">User Accounts</h3>
           <div class="table-scroll">
             <table id="usersTable">
               <thead>
@@ -453,7 +731,7 @@
               </thead>
               <tbody id="usersTableBody">
                 <tr class="empty-row">
-                  <td colspan="3">None yet.</td>
+                  <td colspan="3">No user profiles yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -463,8 +741,18 @@
 
     </main>
 
+    <!-- Mobile Bottom Navigation Bar (5 tabs) -->
     <nav class="tabbar">
-      <button class="tabbar__btn is-active" data-panel="panel-entry">
+      <button class="tabbar__btn is-active" data-panel="panel-dashboard">
+        <svg viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="7" height="9" rx="1" stroke="currentColor" stroke-width="2"/>
+          <rect x="14" y="3" width="7" height="5" rx="1" stroke="currentColor" stroke-width="2"/>
+          <rect x="14" y="12" width="7" height="9" rx="1" stroke="currentColor" stroke-width="2"/>
+          <rect x="3" y="16" width="7" height="5" rx="1" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span>Dash</span>
+      </button>
+      <button class="tabbar__btn" data-panel="panel-entry">
         <svg viewBox="0 0 24 24" fill="none">
           <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
@@ -472,10 +760,15 @@
       </button>
       <button class="tabbar__btn" data-panel="panel-stock">
         <svg viewBox="0 0 24 24" fill="none">
-          <path d="M4 21V9l8-6 8 6v12M4 21h16M9 21v-6h6v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
+          <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>Stock</span>
+      </button>
+      <button class="tabbar__btn" data-panel="panel-inbox">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Inbox</span>
       </button>
       <button class="tabbar__btn" data-panel="panel-admin" id="tabAdminLink">
         <svg viewBox="0 0 24 24" fill="none">
@@ -490,7 +783,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 
