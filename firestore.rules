@@ -52,20 +52,33 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Section 1 — data entry records (brand, date, case rate, size)
+    // Registered resorts / companies
+    match /resorts/{resortId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Section 1 — customisation sales entry records
     match /entries/{entryId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Section 2 — one stock summary doc per bottle
+    // Section 2 — batch stock records (product, size, batchNo, qty, date)
+    match /stockBatches/{batchId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Section 2 — legacy stock summary (if used)
     match /stock/{bottleId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
     }
 
-    // Section 2 — log of every production / sale movement
+    // Section 2 — log of stock transactions
     match /stockTransactions/{txId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
